@@ -8,6 +8,7 @@ local Config = require(Shared.Config)
 local Format = require(Shared.Format)
 local PetConfig = require(Shared.PetConfig)
 local PetModel = require(Shared.PetModel)
+local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 local Effects = require(script.Parent.Effects)
 local Hud = require(script.Parent.Hud)
@@ -367,9 +368,10 @@ function PetsUi.start()
 				child:Destroy()
 			end
 		end
-		-- the odds shown are the configured weights themselves (they add up to 100)
-		for order, entry in egg.pets do
-			local chip = Ui.tag(`{entry[2]}%  {PetConfig.Pets[entry[1]].displayName}`, rarityColor(entry[1]), { LayoutOrder = order, Parent = odds })
+		-- the odds shown come from the same function the server rolls with, including this player's Egg Luck
+		for order, entry in PetConfig.eggChances(selectedEgg, Progression.luck(Progression.readUpgrades(player))) do
+			local percent = entry[2] >= 10 and string.format("%.0f", entry[2]) or string.format("%.1f", entry[2])
+			local chip = Ui.tag(`{percent}%  {PetConfig.Pets[entry[1]].displayName}`, rarityColor(entry[1]), { LayoutOrder = order, Parent = odds })
 			chip.Label.TextSize = 12
 		end
 		local full = #inventory.pets >= PetConfig.InventoryCapacity
@@ -389,6 +391,7 @@ function PetsUi.start()
 	end
 	player:GetAttributeChangedSignal("Coins"):Connect(refreshEggs)
 	player:GetAttributeChangedSignal("Inventory"):Connect(refreshEggs)
+	player:GetAttributeChangedSignal("Upgrades"):Connect(refreshEggs)
 
 	openButton.Activated:Connect(function()
 		if opening then

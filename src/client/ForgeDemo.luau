@@ -1,4 +1,4 @@
--- Dev-only showcase of the image-based Ui pieces (Ui.imageButton, Ui.imageCoin). Not part of the game HUD.
+-- Dev-only showcase of the image-based Ui pieces (Ui.imageButton, Ui.coin). Not part of the game HUD.
 -- Studio only. Show it with the Workspace attribute "ForgeDemo" = true (server or client command bar), hide with false.
 -- Its ScreenGui "ForgeDemo" also takes the attribute `PreviewSize` (Vector2) to render as if the screen had that size.
 local Players = game:GetService("Players")
@@ -16,7 +16,7 @@ function ForgeDemo.start()
 	-- coin at three sizes next to live text
 	for i, size in { 28, 44, 64 } do
 		local x = 18 + (i - 1) * 132
-		Ui.imageCoin(size, { Name = "Coin" .. size, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.fromOffset(x, 106), Parent = face })
+		Ui.coin(size, { Name = "Coin" .. size, AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.fromOffset(x, 106), Parent = face })
 		Ui.text({ Text = ({ "250", "1.2k", "8k" })[i], TextSize = 14 + size * 0.3, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.fromOffset(70, 40), Position = UDim2.fromOffset(x + size * 0.8 + 8, 86), Parent = face })
 	end
 
@@ -27,7 +27,7 @@ function ForgeDemo.start()
 	-- pressing this one edits its own text and size: text is native, the 9-slice follows the new size
 	local presses = 0
 	local big, bigLabel = Ui.imageButton({ text = "BUY", textSize = 34 }, { Name = "Big", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 210), Size = UDim2.fromOffset(300, 84), Parent = face })
-	Ui.imageCoin(46, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 22, 0.45, 0), ZIndex = 3, Parent = big })
+	Ui.coin(46, { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 22, 0.45, 0), ZIndex = 3, Parent = big })
 	big.Activated:Connect(function()
 		presses += 1
 		bigLabel.Text = `BOUGHT x{presses}`

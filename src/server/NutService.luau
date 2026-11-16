@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
+local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 local PlayerData = require(script.Parent.PlayerData)
 local NutModel = require(script.Parent.NutModel)
@@ -12,6 +13,8 @@ local NutService = {}
 
 local nuts = {} -- [id] = { id, def, point, position, health, model, damage = { [Player] = dealt } }
 local targets = {} -- [Player] = nut id
+local lastRound = {} -- [Player] = os.clock() of that player's last round of hits
+local STEP = 0.05 -- loop resolution; must stay well below Progression.MinTickInterval
 local nextId = 0
 local folder
 
@@ -30,16 +33,18 @@ local function setTarget(player, id: number?)
 	player:SetAttribute("TargetId", id or 0)
 end
 
--- Attack units of a player. Every unit hits the player's assigned nut once per server tick.
---   { source = "player", damage = Strength }            always first
---   { source = pet type id, damage = PetConfig damage }   one per equipped pet
--- Units have no timers and no targets of their own: they exist only inside the tick, so they stop the moment the
--- assignment ends (nut broken, out of range, retarget). To rebalance pets later (multipliers, caps, buffs) change
--- the damage computed here; nothing else in combat needs to know.
+-- Attack units of a player. Every unit hits the player's assigned nut once per round of hits.
+--   { source = "player", damage = Progression.playerDamage(...) }   always first
+--   { source = pet type id, damage = Progression.petDamage(...) }   one per equipped pet
+-- Units have no timers and no targets of their own: they exist only inside a round, so they stop the moment the
+-- assignment ends (nut broken, out of range, retarget). All multipliers live in Shared.Progression.
 local function attackUnits(player): { { source: string, damage: number } }
-	local units = { { source = "player", damage = PlayerData.strength(player) } }
+	local levels = PlayerData.upgrades(player)
+	local units = {
+		{ source = "player", damage = Progression.playerDamage(PlayerData.strength(player), levels, PlayerData.rebirths(player)) },
+	}
 	for _, petType in PlayerData.equippedPets(player) do
-		table.insert(units, { source = petType, damage = PetConfig.Pets[petType].damage })
+		table.insert(units, { source = petType, damage = Progression.petDamage(PetConfig.Pets[petType].damage, levels) })
 	end
 	return units
 end
@@ -76,8 +81,15 @@ local function breakNut(nut)
 		if player.Parent then
 			-- shared nuts pay each player by their share of the damage
 			local share = math.max(1, math.floor(nut.def.reward * dealt / total + 0.5))
+			share = Progression.coinReward(share, PlayerData.upgrades(player))
 			PlayerData.addCoins(player, share)
 			Remotes.Notify:FireClient(player, "Reward", share, nut.position)
+			if nut.def == Config.Nuts.GoldenNut then
+				local diamonds = PlayerData.grantOnce(player, "FirstGoldenNut")
+				if diamonds > 0 then
+					Remotes.Notify:FireClient(player, "Diamonds", diamonds, Progression.OneTimeRewards.FirstGoldenNut.label)
+				end
+			end
 		end
 	end
 
@@ -161,20 +173,46 @@ function NutService.start(spawnPoints)
 
 	Players.PlayerRemoving:Connect(function(player)
 		targets[player] = nil
+		lastRound[player] = nil
 	end)
 
-	-- One global tick: a player gets at most one round of hits per tick no matter how often they click or retarget.
+	-- Dev tool, Studio only: Workspace attribute "DevTarget" = nut id behaves as if every player clicked that nut
+	-- (same onClick -> check path, so range and strength rules still apply). For automated tests without a mouse.
+	if game:GetService("RunService"):IsStudio() then
+		workspace:GetAttributeChangedSignal("DevTarget"):Connect(function()
+			local id = workspace:GetAttribute("DevTarget")
+			if type(id) == "number" and id > 0 then
+				for _, player in Players:GetPlayers() do
+					onClick(player, id)
+				end
+				workspace:SetAttribute("DevTarget", 0)
+			end
+		end)
+	end
+
+	-- One loop for everybody, stepping finer than any allowed interval. Each player lands a round of hits when their
+	-- own interval (Attack Speed upgrade, floored at Progression.MinTickInterval) has passed since their LAST round —
+	-- so clicking, retargeting or re-assigning can never produce hits faster than that interval.
 	task.spawn(function()
 		while true do
-			task.wait(Config.TickInterval)
+			task.wait(STEP)
+			local now = os.clock()
 			for player, id in targets do
+				local interval = Progression.tickInterval(PlayerData.upgrades(player))
+				local due = (lastRound[player] or 0) + interval
+				if now < due then
+					continue
+				end
+				-- advance by the interval itself (not to `now`) so the loop step does not round every interval up;
+				-- after an idle gap start counting from now instead of bursting to catch up
+				lastRound[player] = now - due > interval and now or due
 				local ok, err = pcall(function()
 					local nut = check(player, id, Config.LeashRange)
 					if not nut then
-						setTarget(player, nil) -- walked away, died, or the nut is gone
+						setTarget(player, nil) -- walked away, died, got too weak (rebirth), or the nut is gone
 						return
 					end
-					-- all units land together as one hit: one Health update per player per tick
+					-- all units land together as one hit: one Health update per player per round
 					local damage = 0
 					for _, unit in attackUnits(player) do
 						damage += unit.damage

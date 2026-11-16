@@ -5,6 +5,7 @@ require(script.PlayerData).start()
 require(script.NutService).start(spawnPoints)
 require(script.ShopService).start()
 require(script.PetService).start()
+require(script.ProgressionService).start()
 
 -- Dev tool, Studio only: set the Workspace attribute "DevCoins" from the server command bar to give everyone coins.
 -- Clients cannot write server attributes, and this never runs in a published game.
@@ -16,6 +17,16 @@ if game:GetService("RunService"):IsStudio() then
 				require(script.PlayerData).addCoins(player, amount)
 			end
 			workspace:SetAttribute("DevCoins", 0)
+		end
+	end)
+	-- same for diamonds: "DevDiamonds"
+	workspace:GetAttributeChangedSignal("DevDiamonds"):Connect(function()
+		local amount = workspace:GetAttribute("DevDiamonds")
+		if type(amount) == "number" and amount > 0 then
+			for _, player in game:GetService("Players"):GetPlayers() do
+				require(script.PlayerData).addDiamonds(player, amount, "dev")
+			end
+			workspace:SetAttribute("DevDiamonds", 0)
 		end
 	end)
 end

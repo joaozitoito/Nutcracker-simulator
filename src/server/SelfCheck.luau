@@ -2,6 +2,7 @@
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
+local Progression = require(Shared.Progression)
 
 return function()
 	local maxStrength = Config.strengthAtLevel(Config.MaxStrengthLevel)
@@ -45,4 +46,38 @@ return function()
 		cheapest = math.min(cheapest, egg.price)
 	end
 	assert(PetConfig.MaxEquipped <= PetConfig.InventoryCapacity, "cannot equip more pets than fit in the inventory")
+
+	-- egg luck: at any luck the table still adds up to 100, nothing is negative, and rarer never beats the base odds' order of magnitude
+	local maxLuck = Progression.Upgrades.EggLuck.perLevel * Progression.Upgrades.EggLuck.maxLevel
+	for _, id in PetConfig.EggOrder do
+		for _, luck in { 0, maxLuck / 2, maxLuck } do
+			local sum = 0
+			for i, chance in PetConfig.eggChances(id, luck) do
+				assert(chance[2] > 0, id .. ": a chance dropped to zero or below")
+				assert(luck > 0 or math.abs(chance[2] - PetConfig.Eggs[id].pets[i][2]) < 1e-9, id .. ": luck 0 must equal the configured weights")
+				sum += chance[2]
+			end
+			assert(math.abs(sum - 100) < 1e-9, id .. ": chances must add up to 100")
+		end
+	end
+
+	-- permanent upgrades and rebirth
+	for _, id in Progression.UpgradeOrder do
+		local upgrade = assert(Progression.Upgrades[id], "UpgradeOrder names a missing upgrade: " .. id)
+		assert(upgrade.maxLevel >= 1 and upgrade.perLevel > 0, id .. ": bad numbers")
+		for level = 1, upgrade.maxLevel - 1 do
+			assert(Progression.upgradeCost(id, level) >= Progression.upgradeCost(id, level - 1), id .. ": cost must not go down")
+		end
+		assert(Progression.upgradeCost(id, 0) >= 1, id .. ": first level must cost something")
+	end
+	local all = {}
+	for id, upgrade in Progression.Upgrades do
+		all[id] = upgrade.maxLevel
+	end
+	assert(Progression.tickInterval(all) >= Progression.MinTickInterval, "attack speed breaks the minimum interval")
+	assert(Progression.walkSpeed(all) <= Progression.MaxWalkSpeed, "walk speed breaks the maximum")
+	assert(Progression.rebirthDiamonds(0) >= Progression.upgradeCost("WalkSpeed", 0), "first rebirth cannot buy anything")
+	for n = 1, 20 do
+		assert(Progression.rebirthRequirement(n) > Progression.rebirthRequirement(n - 1), "rebirth requirement must grow")
+	end
 end

@@ -9,6 +9,7 @@ local UserInputService = game:GetService("UserInputService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
+local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 local Effects = require(script.Parent.Effects)
 local Ui = require(script.Parent.Ui)
@@ -69,7 +70,7 @@ function Hud.start()
 	uiScale = make("UIScale", { Parent = root })
 
 	---------------------------------------------------------------- stats: coins, strength, progress to next upgrade
-	local stats = make("Frame", { Name = "Stats", Size = UDim2.fromOffset(210, 170), BackgroundTransparency = 1, Parent = root })
+	local stats = make("Frame", { Name = "Stats", Size = UDim2.fromOffset(210, 222), BackgroundTransparency = 1, Parent = root })
 
 	local function pill(name: string, icon: GuiObject, y: number)
 		local card, face = Ui.card({ color = C.night, radius = 26, depth = 5 }, {
@@ -92,14 +93,19 @@ function Hud.start()
 		})
 	end
 
-	coinIcon = Ui.coin(58)
+	coinIcon = Ui.coin(60)
 	local coinsValue = pill("Coins", coinIcon, 0)
+	coinIcon.Position = UDim2.fromOffset(-8, -6)
+	local diamondIcon = Ui.diamond(58)
+	local diamondsValue = pill("Diamonds", diamondIcon, 62)
 	local strengthIcon = Ui.iconTile("💪", C.red, 58)
-	local strengthValue = pill("Strength", strengthIcon, 62)
+	local strengthValue = pill("Strength", strengthIcon, 124)
+	-- damage multiplier from rebirth + Strength Multiplier, shown only once the player has one
+	local multiplierTag = Ui.tag("", C.red, { Name = "Multiplier", Size = UDim2.fromOffset(58, 24), Position = UDim2.new(1, -52, 0, -10), ZIndex = 4, Visible = false, Parent = strengthValue.Parent.Parent })
 	local progress, setProgress = Ui.bar({ color = C.gold, textSize = 15 }, {
 		Name = "Progress",
 		Size = UDim2.fromOffset(196, 28),
-		Position = UDim2.fromOffset(12, 126),
+		Position = UDim2.fromOffset(12, 188),
 		Parent = stats,
 	})
 
@@ -170,18 +176,22 @@ function Hud.start()
 
 	---------------------------------------------------------------- shop button (+ "you can afford it" badge) and toasts
 	-- menu: every feature adds its button here, layout() decides if the row is horizontal or vertical
-	local menu = make("Frame", { Name = "Menu", BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.XY, Parent = root })
-	local menuList = make("UIListLayout", {
-		Padding = UDim.new(0, 12),
-		SortOrder = Enum.SortOrder.LayoutOrder,
-		HorizontalAlignment = Enum.HorizontalAlignment.Center,
-		VerticalAlignment = Enum.VerticalAlignment.Center,
-		Parent = menu,
-	})
+	local menu = make("Frame", { Name = "Menu", BackgroundTransparency = 1, Parent = root })
+	local menuGrid = make("UIGridLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = menu })
 	local menuCount = 0
+	local layout -- defined at the end of start(); adding a button re-runs it
 	function Hud.addMenuButton(name: string, text: string, color: Color3)
 		menuCount += 1
-		return Ui.button({ text = text, color = color, textSize = 24 }, { Name = name, LayoutOrder = menuCount, Size = UDim2.fromOffset(150, 66), Parent = menu })
+		local button, label = Ui.button({ text = text, color = color, textSize = 22 }, { Name = name, LayoutOrder = menuCount, Parent = menu })
+		-- labels shrink to fit the smaller phone cells instead of clipping
+		label.TextScaled = true
+		label.Size = UDim2.new(1, -14, 1, -12)
+		label.Position = UDim2.fromOffset(7, 6)
+		make("UITextSizeConstraint", { MaxTextSize = 22, MinTextSize = 10, Parent = label })
+		if layout then
+			layout()
+		end
+		return button
 	end
 	local shopButton = Hud.addMenuButton("ShopButton", "🔨 SHOP", C.orange)
 	local badge = Ui.iconTile("!", C.red, 30, { Name = "Badge", Position = UDim2.new(1, -18, 0, -12), ZIndex = 4, Visible = false, Parent = shopButton })
@@ -294,6 +304,8 @@ function Hud.start()
 			return
 		end
 
+		-- a rebirth brings the level back from MAX, so undo what the MAX branch hid
+		progress.Visible, gainTag.Visible, buyCoin.Visible = true, true, true
 		local cost = Config.upgradeCost(level)
 		local nextStrength = Config.strengthAtLevel(level + 1)
 		local affordable = coins >= cost
@@ -312,6 +324,24 @@ function Hud.start()
 	for _, name in { "Coins", "StrengthLevel", "Strength" } do
 		player:GetAttributeChangedSignal(name):Connect(refresh)
 	end
+
+	-- diamonds and the player's damage multiplier (rebirth x Strength Multiplier upgrade)
+	local lastDiamonds
+	local function refreshProgression()
+		local diamonds = player:GetAttribute("Diamonds") or 0
+		diamondsValue.Text = Format(diamonds)
+		if lastDiamonds and diamonds > lastDiamonds then
+			Ui.bump(diamondIcon, 1.4)
+		end
+		lastDiamonds = diamonds
+		local multiplier = Progression.playerDamage(1000, Progression.readUpgrades(player), player:GetAttribute("Rebirths") or 0) / 1000
+		multiplierTag.Visible = multiplier > 1
+		multiplierTag.Label.Text = string.format("x%.2f", multiplier)
+	end
+	for _, name in { "Diamonds", "Rebirths", "Upgrades" } do
+		player:GetAttributeChangedSignal(name):Connect(refreshProgression)
+	end
+	refreshProgression()
 
 	---------------------------------------------------------------- actions
 	-- One modal panel at a time over a dimmed screen. Hud.modal(panel) opens it, Hud.modal(nil) closes whatever is open.
@@ -386,7 +416,17 @@ function Hud.start()
 	end)
 
 	---------------------------------------------------------------- responsive layout
-	local function layout()
+	-- menu as a grid: `columns` cells per row, sized so it never needs more room than the screen has
+	local function arrangeMenu(columns: number, width: number, height: number)
+		local rows = math.ceil(math.max(menuCount, 1) / columns)
+		local used = math.min(columns, math.max(menuCount, 1))
+		menuGrid.CellSize = UDim2.fromOffset(width, height)
+		menuGrid.CellPadding = UDim2.fromOffset(10, 10)
+		menuGrid.FillDirectionMaxCells = columns
+		menu.Size = UDim2.fromOffset(used * width + (used - 1) * 10, rows * height + (rows - 1) * 10)
+	end
+
+	layout = function()
 		local preview = gui:GetAttribute("PreviewSize")
 		root.BackgroundTransparency = preview and 0.7 or 1
 		root.BackgroundColor3 = Color3.new(0, 0, 0)
@@ -400,7 +440,7 @@ function Hud.start()
 			stats.AnchorPoint, stats.Position = Vector2.new(0, 0.5), UDim2.new(0, 14, 0.5, 0)
 			target.Position = UDim2.new(0.5, 0, 0, 22)
 			menu.AnchorPoint, menu.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -14)
-			menuList.FillDirection = Enum.FillDirection.Horizontal
+			arrangeMenu(8, 150, 66) -- one row
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -92)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Bottom
 		elseif not portrait then
@@ -409,17 +449,17 @@ function Hud.start()
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
 			target.Position = UDim2.new(0.5, 0, 0, 20)
 			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -12, 0.5, 0)
-			menuList.FillDirection = Enum.FillDirection.Vertical
+			arrangeMenu(2, 116, 54) -- two columns on the right edge
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 132)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		else
 			-- phone portrait: stack stats and target vertically
 			uiScale.Scale = math.clamp(size.X / 440, 0.6, 1)
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
-			target.Position = UDim2.new(0.5, 0, 0, 200)
-			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -10, 0.62, 0)
-			menuList.FillDirection = Enum.FillDirection.Vertical
-			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 312)
+			target.Position = UDim2.new(0.5, 0, 0, 240)
+			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -10, 0.72, 0)
+			arrangeMenu(2, 116, 54)
+			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 352)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		end
 		hint.Position = target.Position

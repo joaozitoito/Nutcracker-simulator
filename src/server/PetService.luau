@@ -1,6 +1,7 @@
 -- Eggs and equipping. The client asks ("open this egg", "equip this uid"); price, odds, result and limits are decided here.
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local PetConfig = require(Shared.PetConfig)
+local Progression = require(Shared.Progression)
 local Remotes = require(Shared.Remotes)
 local PlayerData = require(script.Parent.PlayerData)
 
@@ -22,7 +23,12 @@ function PetService.start()
 			return { ok = false, reason = "coins" }
 		end
 		-- the pet is in the inventory before the client is told anything: the animation is only a presentation
-		local pet = PlayerData.addPet(player, PetConfig.rollPet(eggId, rng:NextNumber()))
+		local luck = Progression.luck(PlayerData.upgrades(player))
+		local pet = PlayerData.addPet(player, PetConfig.rollPet(eggId, rng:NextNumber(), luck))
+		local diamonds = PlayerData.grantOnce(player, "FirstPet")
+		if diamonds > 0 then
+			Remotes.Notify:FireClient(player, "Diamonds", diamonds, Progression.OneTimeRewards.FirstPet.label)
+		end
 		return { ok = true, pet = pet }
 	end
 

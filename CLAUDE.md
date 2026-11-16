@@ -107,3 +107,17 @@ Rebirth, novas áreas, chefes, eventos, gamepasses, poções, encantamentos, fus
 ## Segurança do projeto
 
 Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
+
+## Progressão: diamantes, upgrades permanentes e rebirth (resumo)
+
+- Config e fórmulas: `src/shared/Progression.luau` (único lugar onde multiplicadores são combinados; ver cabeçalho).
+- Estado: `PlayerData` ganhou `diamonds`, `rebirths`, `upgrades`, `claimed` (+ `addDiamonds`, `spendDiamonds`,
+  `grantOnce`, `buyUpgrade`, `rebirth`, `sanitize`, `ledger`). Atributos novos no Player: `Diamonds`, `Rebirths`, `Upgrades` (JSON).
+- Serviço: `ProgressionService` (remotes `BuyUpgrade(id)` e `Rebirth()`); telas em `ProgressionUi`.
+- Rebirth zera moedas e nível de Força; mantém pets, diamantes, upgrades. A resistência das nozes continua comparada
+  só com a Força base.
+- Attack Speed: um loop único no `NutService` (passo 0,05 s) com intervalo por jogador, piso `MinTickInterval`.
+- Egg Luck: `PetConfig.eggChances(eggId, luck)`; a soma é sempre 100 e nada fica negativo.
+- Persistência: `Persistence.luau` está **desligada** (`Enabled = false`); só foi testada com o armazenamento em memória.
+- Ferramentas só do Studio (atributos do Workspace, no servidor): `DevCoins`, `DevDiamonds`, `DevTarget` (id da noz),
+  `DevReload` (salva e recarrega pelo armazenamento em memória).

@@ -1,6 +1,7 @@
 -- All pet and egg data. Adding a pet or an egg = adding an entry here (plus an outfit in PetModel if it needs new looks).
 -- Server acts on it (prices, odds, damage); client only reads it for display.
 local HttpService = game:GetService("HttpService")
+local Config = require(script.Parent.Config)
 
 local PetConfig = {}
 
@@ -103,21 +104,50 @@ PetConfig.Eggs = {
 	},
 }
 
--- Picks a pet from an egg. `roll` is a number in [0, 1); the server passes its own random number, never the client's.
-function PetConfig.rollPet(eggId: string, roll: number): string
+-- How much one rarity step above the egg's most common rarity is worth per point of luck.
+-- weight' = weight x (1 + luck x steps), then everything is rescaled to add up to 100.
+-- Luck only ever multiplies by a positive number, so no chance can go negative, nothing is ever guaranteed,
+-- and the common pets still keep most of the table (see the Egg Luck numbers in Progression).
+function PetConfig.eggChances(eggId: string, luck: number?): { { any } }
 	local pets = PetConfig.Eggs[eggId].pets
-	local total = 0
+	local lowest = math.huge
 	for _, entry in pets do
-		total += entry[2]
+		lowest = math.min(lowest, Config.Rarities[PetConfig.Pets[entry[1]].rarity].order)
 	end
-	local threshold = roll * total
-	for _, entry in pets do
-		threshold -= entry[2]
-		if threshold < 0 then
-			return entry[1]
+	local weights, total = {}, 0
+	for i, entry in pets do
+		local steps = Config.Rarities[PetConfig.Pets[entry[1]].rarity].order - lowest
+		weights[i] = entry[2] * (1 + math.max(0, luck or 0) * steps)
+		total += weights[i]
+	end
+	-- percentages; the biggest entry absorbs the rounding so the list adds up to exactly 100
+	local chances, sum, biggest = {}, 0, 1
+	for i, entry in pets do
+		chances[i] = { entry[1], weights[i] / total * 100 }
+		if chances[i][2] > chances[biggest][2] then
+			biggest = i
 		end
 	end
-	return pets[#pets][1]
+	for i, chance in chances do
+		if i ~= biggest then
+			sum += chance[2]
+		end
+	end
+	chances[biggest][2] = 100 - sum
+	return chances
+end
+
+-- Picks a pet from an egg. `roll` is a number in [0, 1); the server passes its own random number, never the client's.
+function PetConfig.rollPet(eggId: string, roll: number, luck: number?): string
+	local chances = PetConfig.eggChances(eggId, luck)
+	local threshold = roll * 100
+	for _, chance in chances do
+		threshold -= chance[2]
+		if threshold < 0 then
+			return chance[1]
+		end
+	end
+	return chances[#chances][1]
 end
 
 -- Inventory as replicated in the Player attribute "Inventory" (JSON written by the server's PlayerData):

@@ -235,33 +235,26 @@ function Ui.iconTile(text: string, color: Color3, size: number, props: { [string
 	return apply(tile, props)
 end
 
-function Ui.coin(size: number, props: { [string]: any }?)
-	local coin = make("Frame", { BackgroundColor3 = Ui.Color.gold, BorderSizePixel = 0, Size = UDim2.fromOffset(size, size) }, {
-		round(),
-		Ui.stroke(3, Color3.fromRGB(150, 90, 20)),
-		make("Frame", {
-			Size = UDim2.fromScale(0.62, 0.62),
-			Position = UDim2.fromScale(0.19, 0.19),
-			BackgroundColor3 = Color3.fromRGB(255, 226, 110),
+-- Diamond icon (the permanent currency): a faceted gem drawn with frames, no image asset needed.
+function Ui.diamond(size: number, props: { [string]: any }?)
+	local function facet(w: number, h: number, x: number, y: number, color: Color3, z: number)
+		return make("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromScale(w, h),
+			Position = UDim2.fromScale(x, y),
+			Rotation = 45,
+			BackgroundColor3 = color,
 			BorderSizePixel = 0,
-		}, { round() }),
-		-- tiny acorn silhouette in the middle: our currency is the acorn coin
-		make("Frame", {
-			Size = UDim2.fromScale(0.26, 0.3),
-			Position = UDim2.fromScale(0.37, 0.4),
-			BackgroundColor3 = Color3.fromRGB(214, 140, 10),
-			BorderSizePixel = 0,
-			ZIndex = 2,
-		}, { round() }),
-		make("Frame", {
-			Size = UDim2.fromScale(0.36, 0.16),
-			Position = UDim2.fromScale(0.32, 0.3),
-			BackgroundColor3 = Color3.fromRGB(170, 100, 10),
-			BorderSizePixel = 0,
-			ZIndex = 3,
-		}, { round() }),
-	})
-	return apply(coin, props)
+			ZIndex = z,
+		}, { Ui.corner(math.max(2, size * 0.08)) })
+	end
+	local gem = make("Frame", { Name = "Diamond", BackgroundTransparency = 1, Size = UDim2.fromOffset(size, size) })
+	local body = facet(0.66, 0.66, 0.5, 0.5, Color3.fromRGB(70, 200, 255), 1)
+	Ui.stroke(math.max(2, size * 0.06), Color3.fromRGB(20, 70, 140)).Parent = body
+	body.Parent = gem
+	facet(0.36, 0.36, 0.5, 0.42, Color3.fromRGB(170, 235, 255), 2).Parent = gem
+	facet(0.14, 0.14, 0.4, 0.34, Ui.Color.white, 3).Parent = gem
+	return apply(gem, props)
 end
 
 -- 2D nut drawn from the same `look` table the 3D model uses, so the icon always matches the nut type.
@@ -327,8 +320,9 @@ function Ui.imageButton(style: { text: string, image: any?, textSize: number? },
 	button:GetPropertyChangedSignal("Size"):Connect(fitCorners)
 
 	local function press(down: boolean)
+		local base = button:GetAttribute("Tint") or Ui.Color.white
 		Ui.tween(label, 0.06, { Position = UDim2.fromOffset(0, down and 3 or 0) })
-		Ui.tween(button, 0.06, { ImageColor3 = down and Color3.fromRGB(215, 215, 215) or Ui.Color.white })
+		Ui.tween(button, 0.06, { ImageColor3 = down and Ui.shade(base, 0.15) or base })
 	end
 	button.MouseEnter:Connect(function()
 		Ui.tween(scale, 0.12, { Scale = 1.06 }, Enum.EasingStyle.Back)
@@ -349,8 +343,14 @@ function Ui.imageButton(style: { text: string, image: any?, textSize: number? },
 	return button, label
 end
 
--- Coin icon from the art asset, `size` pixels tall, keeping the art's proportions.
-function Ui.imageCoin(size: number, props: { [string]: any }?)
+-- Tints an image button (grey = cannot afford, red = confirm...). nil goes back to the art's own colours.
+function Ui.tintImageButton(button: ImageButton, color: Color3?)
+	button:SetAttribute("Tint", color)
+	button.ImageColor3 = color or Ui.Color.white
+end
+
+-- Coin icon (the acorn coin art), `size` pixels tall, keeping the art's proportions. Used everywhere a coin is shown.
+function Ui.coin(size: number, props: { [string]: any }?)
 	local image = Assets.Images.CoinAcorn
 	local coin = make("ImageLabel", { Name = "Coin", ScaleType = Enum.ScaleType.Fit, Size = UDim2.fromOffset(size * Assets.aspect(image), size) })
 	useImage(coin, image)

@@ -2,13 +2,17 @@
 -- BuyStrength: client -> server, no arguments, returns { ok, reason? }
 -- OpenEgg: client -> server, (eggId: string), returns { ok, reason?, pet? = { uid, type } }
 -- EquipPet: client -> server, (uid: number, equip: boolean), returns { ok, reason? }
--- Notify: server -> client, ("Reward", amount, position) | ("Denied", message)
+-- BuyUpgrade: client -> server, (upgradeId: string), returns { ok, reason? }
+-- Rebirth: client -> server, no arguments, returns { ok, reason?, diamonds?, rebirths? }
+-- Notify: server -> client, ("Reward", amount, position) | ("Denied", message) | ("Diamonds", amount, label)
 local RunService = game:GetService("RunService")
 
 local defs = {
 	BuyStrength = "RemoteFunction",
 	OpenEgg = "RemoteFunction",
 	EquipPet = "RemoteFunction",
+	BuyUpgrade = "RemoteFunction",
+	Rebirth = "RemoteFunction",
 	Notify = "RemoteEvent",
 }
 local Remotes = {}
