@@ -293,6 +293,48 @@ function Ui.nutIcon(look, size: number, props: { [string]: any }?)
 	return apply(icon, props)
 end
 
+-- Modal panel with a coloured title band and a close button. Returns (frame, face, close). Content starts at y = 70.
+function Ui.panel(style: { title: string, color: Color3 }, props: { [string]: any }?)
+	local frame, face = Ui.card({ color = Ui.Color.panel, radius = 24, depth = 8 }, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromOffset(420, 350),
+		Visible = false,
+		ZIndex = 11,
+	})
+	make("Frame", { Name = "Header", Size = UDim2.new(1, -12, 0, 58), Position = UDim2.fromOffset(6, 6), BackgroundColor3 = style.color, BorderSizePixel = 0, Parent = face }, {
+		Ui.corner(18),
+		Ui.text({ Name = "Title", Text = style.title, TextSize = 30, Size = UDim2.fromScale(1, 1) }),
+	})
+	local close = Ui.button({ text = "X", color = Ui.Color.red, textSize = 24, depth = 4, radius = 14 }, {
+		Name = "Close",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.new(1, -8, 0, 8),
+		Size = UDim2.fromOffset(50, 50),
+		ZIndex = 3,
+		Parent = frame,
+	})
+	return apply(frame, props), face, close
+end
+
+-- 3D model shown inside the UI (pet and egg icons). Takes ownership of the model; models are built facing -Z.
+function Ui.viewport(model: Model, props: { [string]: any }?)
+	local frame = make("ViewportFrame", {
+		BackgroundTransparency = 1,
+		Ambient = Color3.fromRGB(200, 200, 200),
+		LightColor = Color3.new(1, 1, 1),
+		LightDirection = Vector3.new(0.4, -1, 1),
+	})
+	local cframe, size = model:GetBoundingBox()
+	local camera = make("Camera", { FieldOfView = 30, Parent = frame })
+	local distance = math.max(size.X, size.Y, size.Z) * 0.5 / math.tan(math.rad(15)) * 1.12
+	local from = (CFrame.Angles(0, math.rad(-25), 0) * Vector3.new(0, 0.18, -1)).Unit * distance
+	camera.CFrame = CFrame.lookAt(cframe.Position + from, cframe.Position)
+	frame.CurrentCamera = camera
+	model.Parent = frame
+	return apply(frame, props)
+end
+
 -- Open / close a panel with a pop. The panel needs no setup: the UIScale is created on first use.
 function Ui.pop(frame: GuiObject, open: boolean)
 	local scale = frame:FindFirstChild("Pop") or make("UIScale", { Name = "Pop", Parent = frame })

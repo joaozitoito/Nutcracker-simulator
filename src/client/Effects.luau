@@ -191,6 +191,12 @@ local function strike()
 	end)
 end
 
+-- Other modules (pet followers) react to server-confirmed hits through this; callback(model) runs once per Health drop.
+local hitListeners = {}
+function Effects.onHit(callback: (Model) -> ())
+	table.insert(hitListeners, callback)
+end
+
 ---------------------------------------------------------------- tracking
 local function track(model: Instance, animate: boolean)
 	if not model:IsA("Model") then
@@ -217,6 +223,9 @@ local function track(model: Instance, animate: boolean)
 			return
 		end
 		pop(model, 0.84, 0.22)
+		for _, callback in hitListeners do
+			task.spawn(callback, model)
+		end
 		local s = Config.Nuts[model.Name].look.scale
 		local mine = model:GetAttribute("NutId") == player:GetAttribute("TargetId")
 		floatText(

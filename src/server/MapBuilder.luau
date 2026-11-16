@@ -2,6 +2,8 @@
 -- Layout (top view, +Z is south): spawn plaza -> title arch -> field with 3 colour bands -> locked gate to the next area.
 local Lighting = game:GetService("Lighting")
 local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Config)
+local PetConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").PetConfig)
+local PetModel = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").PetModel)
 local NutModel = require(script.Parent.NutModel)
 
 local MapBuilder = {}
@@ -275,9 +277,9 @@ local function buildPlaza()
 		)
 	end
 
-	-- giant acorn statue, west of the plaza
-	pillar(-30, 0, 60, 1, 15, C.pathDark)
-	pillar(-30, 1, 60, 1.4, 12, C.stone)
+	-- giant acorn statue, south-west of the plaza
+	pillar(-52, 0, 82, 1, 15, C.pathDark)
+	pillar(-52, 1, 82, 1.4, 12, C.stone)
 	local statue = NutModel.build({
 		shape = "acorn",
 		scale = 2.6,
@@ -286,7 +288,7 @@ local function buildPlaza()
 		crown = true,
 	})
 	statue.Name = "Statue"
-	statue:PivotTo(at(-30, 2.4, 60))
+	statue:PivotTo(at(-52, 2.4, 82))
 	statue.Parent = map
 
 	-- benches made of logs around the plaza
@@ -342,6 +344,36 @@ local function buildShop()
 	prompt.MaxActivationDistance = 14
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = counter
+end
+
+-- Egg stand west of the plaza (mirrors the shop): one pedestal per egg in PetConfig, the client opens the egg catalog from its prompt.
+local function buildEggs()
+	local x, z = -30, 58
+	pillar(x, 0, z, 0.4, 26, C.cream, DECOR)
+	for i, id in PetConfig.EggOrder do
+		local egg = PetConfig.Eggs[id]
+		local ex = x + (i - (#PetConfig.EggOrder + 1) / 2) * 7
+		pillar(ex, 0, z, 1, 6, C.pathDark)
+		pillar(ex, 1, z, 2, 4.6, C.stone)
+		pillar(ex, 3, z, 0.5, 5.2, egg.look.shell:Lerp(C.outline, 0.2))
+		local model = PetModel.buildEgg(egg.look, 1.1)
+		model.Name = id
+		model:PivotTo(at(ex, 3.5, z) * CFrame.Angles(0, math.rad(180), 0)) -- models face -Z; turn them to face the plaza
+		model.Parent = map
+		sign(egg.displayName .. "\n" .. egg.price .. " Coins",Vector3.new(ex, 1.6, z + 3.2), Vector3.zAxis, Vector2.new(5.6, 2.2), egg.look.shell:Lerp(C.outline, 0.4))
+	end
+	sign("🥚 PET EGGS", Vector3.new(x, 11, z - 3), Vector3.zAxis, Vector2.new(15, 3.4), FLOWERS[4])
+	pillar(x - 8.5, 0, z - 3, 10, 0.9, C.darkWood)
+	pillar(x + 8.5, 0, z - 3, 10, 0.9, C.darkWood)
+
+	local base = block(Vector3.new(20, 1, 4), at(x, 0.5, z), C.white, { Transparency = 1, CanCollide = false })
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "EggPrompt" -- the client opens the egg catalog when this fires
+	prompt.ObjectText = "Pet Eggs"
+	prompt.ActionText = "Open"
+	prompt.MaxActivationDistance = 16
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = base
 end
 
 local function buildGate()
@@ -539,6 +571,7 @@ function MapBuilder.build()
 	buildGround()
 	buildPlaza()
 	buildShop()
+	buildEggs()
 	buildGate()
 	buildDecor()
 	buildLighting()

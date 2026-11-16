@@ -1,6 +1,7 @@
 # Nutcracker Simulator
 
-Simulator Roblox (Luau + Rojo). Estado atual: uma área jogável (Acorn Meadow) — quebrar nozes, ganhar moedas, comprar Força.
+Simulator Roblox (Luau + Rojo). Estado atual: uma área jogável (Acorn Meadow) com o ciclo completo
+quebrar nozes → moedas → Força / ovos → pets → pets equipados seguem o jogador e atacam junto.
 Referências de design e dúvidas em aberto: `docs/NUTCRACKER_REFERENCE_SPEC.md`.
 Interface do jogo em inglês; documentação técnica em português.
 
@@ -12,56 +13,89 @@ rojo serve                                      # sync ao vivo; conectar pelo pl
 ```
 
 Não há linter, formatter nem test runner instalados. Validação = `rojo build` + Play no Studio.
+`rojo build` **não** checa sintaxe Luau: um erro de sintaxe só aparece no Output do Studio.
+
+Ferramentas de desenvolvimento (só no Studio):
+- Moedas: na barra de comando do **servidor**, `workspace:SetAttribute("DevCoins", 1000)` dá moedas a todos.
+- Prévia de resolução: atributo `PreviewSize` (Vector2) no ScreenGui `NutHud` renderiza a HUD naquele tamanho.
 
 ## Estrutura
 
 ```
 src/shared  -> ReplicatedStorage.Shared
-  Config.luau    todos os dados de balanceamento: nozes, raridades, alcances, tick, curvas de força/custo
-  Format.luau    1234 -> "1.2k"
-  Remotes.luau   declara os remotes (pasta "Net"): BuyStrength (RemoteFunction), Notify (RemoteEvent)
+  Config.luau     balanceamento das nozes, raridades (Config.Rarities), alcances, tick, curvas de força/custo
+  PetConfig.luau  pets (raridade, dano, aparência), ovos (preço, moeda, chances), limites, rollPet, readInventory
+  PetModel.luau   modelos procedurais dos esquilos e dos ovos (usado no mundo e nos ícones 3D da interface)
+  Format.luau     1234 -> "1.2k"
+  Remotes.luau    declara os remotes (pasta "Net"): BuyStrength, OpenEgg, EquipPet (RemoteFunction), Notify (RemoteEvent)
 src/server  -> ServerScriptService.Server (init.server.luau sobe os módulos em ordem)
-  SelfCheck      asserts sobre o Config no boot
-  MapBuilder     constrói workspace.Map com Parts e devolve os pontos de spawn das nozes
-  NutModel       constrói o Model de uma noz a partir da tabela `look` do Config
-  PlayerData     moedas + nível de força por jogador (só na sessão), espelhados em atributos/leaderstats
-  NutService     spawn, atribuição (ClickDetector), dano automático por tick, quebra, recompensa, respawn
-  ShopService    handler de BuyStrength
+  SelfCheck       asserts sobre Config e PetConfig no boot (pesos dos ovos somam 100, raridades válidas...)
+  MapBuilder      constrói workspace.Map com Parts (inclui a banca de ovos) e devolve os pontos de spawn das nozes
+  NutModel        constrói o Model de uma noz a partir da tabela `look` do Config
+  PlayerData      ÚNICO dono do estado do jogador: moedas, nível de força, pets, equipados
+  NutService      spawn, atribuição (ClickDetector), dano por tick com attackUnits, quebra, recompensa, respawn
+  ShopService     handler de BuyStrength
+  PetService      handlers de OpenEgg e EquipPet
 src/client  -> StarterPlayerScripts.Client
-  Ui             kit de interface: card, button, bar, tag, iconTile, coin, nutIcon, pop, bump
-  Effects        feedback no mundo: pop das nozes, números de dano, marreta, explosão de quebra, sons
-  Hud            HUD montada com o kit: stats, cartão do alvo, loja, popup, toasts, moedas voando
+  Ui              kit de interface: card, button, bar, tag, panel, viewport, iconTile, coin, nutIcon, pop, bump
+  Effects         feedback no mundo: pop das nozes, números de dano, marreta, explosão de quebra, sons, onHit
+  Hud             HUD: stats, cartão do alvo, menu de botões, loja, popup, toasts; API modal/toggle/oops/addMenuButton
+  Pets            pets seguidores (visual): formação, movimento, investida a cada golpe confirmado
+  PetsUi          botões PETS/EGGS, inventário, catálogo de ovos, sequência de abertura
 ```
 
 ## Regras da arquitetura
 
-- O servidor é a única autoridade. O cliente lê estado replicado e nunca envia valores, ids ou preços.
-  - Estado do jogador: atributos no Player (`Coins`, `Strength`, `StrengthLevel`, `TargetId`).
+- O servidor é a única autoridade. O cliente lê estado replicado e pede ações; nunca envia valores, preços ou resultados.
+  - Estado do jogador: atributos no Player (`Coins`, `Strength`, `StrengthLevel`, `TargetId`, `Inventory`).
+  - `Inventory` é um JSON: `{ pets = [{ uid, type }], equipped = [uid] }`. Ler com `PetConfig.readInventory(player)`.
   - Estado da noz: atributos em cada Model de `workspace.Nuts` (`NutId`, `Health`, `MaxHealth`).
+- Toda mudança de estado do jogador passa por `PlayerData` (`addCoins`, `spend`, `buyLevel`, `addPet`, `setEquipped`).
+  Nenhum outro módulo guarda moedas, pets ou equipados.
+- Handlers de remote não têm `yield` entre validar e alterar: pedidos simultâneos são tratados um após o outro.
 - Ciclo de ataque (decidido pelo dono do projeto, não mudar sem aprovação):
   - Clicar numa noz só **atribui** o alvo. Clicar de novo na mesma noz não faz nada.
-  - O dano vem só do tick global do servidor (`Config.TickInterval`): no máximo uma rodada de golpes por jogador por tick.
+  - O dano vem só do tick global do servidor (`Config.TickInterval`).
   - Sair de `Config.LeashRange` cancela. Clicar em outra noz válida troca o alvo.
-  - Quando a noz quebra, o jogador fica **sem alvo** e precisa escolher outra. Não há reatribuição automática.
+  - Quando a noz quebra, o jogador fica **sem alvo**. Não há reatribuição automática.
 - Todo ataque passa por `check()` no NutService (noz viva, jogador vivo, distância, força >= resistência).
-- Tipo novo de noz = entrada nova em `Config.Nuts` + nome em `Config.NutOrder`. Sem código novo.
-- Mapa e UI são gerados por código; não há assets externos nem instâncias que existam só no place.
-- Toda tela nova usa `Ui.luau`. Não criar frames/botões soltos fora do kit.
-- HUD responsiva: `layout()` em `Hud.luau` tem três arranjos (desktop, celular deitado, celular em pé).
-  Para testar sem emulador: atributo `PreviewSize` (Vector2) no ScreenGui `NutHud` renderiza a HUD naquele tamanho.
+  A resistência da noz é comparada só com a **Força do jogador**: pets aumentam o dano, não liberam nozes mais duras.
+- Dados novos entram por configuração: noz em `Config.Nuts`, pet em `PetConfig.Pets`, ovo em `PetConfig.Eggs`
+  (mais a ordem em `NutOrder` / `PetOrder` / `EggOrder`). Pet com visual novo = função nova em `OUTFITS` no `PetModel`.
+- Mapa, modelos e UI são gerados por código; não há assets externos.
+- Toda tela nova usa `Ui.luau` e entra na HUD por `Hud.addMenuButton` + `Hud.modal(painel)`.
 
-## Pontos de extensão para ovos e pets (ainda não implementados)
+## Combate com pets: `attackUnits(player)`
 
-- **Unidades de ataque:** `attackUnits(player)` em `NutService` devolve a lista de danos que batem no alvo a cada tick.
-  Hoje é `{ força do jogador }`; pets equipados entram como itens extras, sem mexer em atribuição, validação ou quebra.
-- **Raridades:** `Config.Rarities` (nome + cor) já é usado pelas nozes e por `Ui.tag`; ovos e pets devem reutilizar.
-- **Dados do jogador:** `PlayerData` é o único dono do estado; inventário/pets equipados entram na mesma tabela por jogador.
-- **Interface:** catálogo de ovos e inventário devem ser montados com `Ui.card`, `Ui.button`, `Ui.tag`, `Ui.pop`.
-- **Remotes:** declarar em `Remotes.luau`; o cliente pede a ação, o servidor decide tudo.
+`attackUnits(player)` em `NutService` devolve as unidades de ataque do jogador:
+
+```
+{ source = "player",      damage = Força do jogador }      -- sempre a primeira
+{ source = "<tipo do pet>", damage = PetConfig.Pets[tipo].damage }   -- uma por pet equipado
+```
+
+- A cada tick o servidor soma o dano de todas as unidades e aplica **um** golpe na noz atribuída ao jogador.
+- Unidades não têm temporizador nem alvo próprios: só existem dentro do tick. Por isso param no mesmo instante
+  em que a atribuição acaba (noz quebrada, fora de alcance, troca de alvo).
+- A recompensa da noz não depende do número de unidades: é paga uma vez, proporcional ao dano de cada jogador.
+- Para rebalancear pets (multiplicadores, teto, bônus), mudar o dano calculado em `attackUnits`; nada mais.
+
+## Pets seguidores
+
+- Só visual e só no cliente (`Pets.luau`): cada cliente constrói os modelos dos pets equipados de **todos** os
+  jogadores a partir do atributo `Inventory`, e os move num único `Heartbeat` (sem física, sem remotes).
+- Sem alvo: formação atrás do dono. Com alvo: leque em volta da noz, do lado do dono.
+- Investida: `Effects.onHit` dispara quando a noz perde `Health` (golpe confirmado pelo servidor).
+
+## Persistência (ainda não implementada)
+
+`PlayerData.snapshot(player)` devolve exatamente o que um DataStore deve salvar:
+`{ coins, level, nextPetUid, pets = { { uid, type } }, equipped = { uid } }`.
+O carregamento entra pelo segundo argumento de `add(player, saved)` em `PlayerData`. Nada depende da HUD.
 
 ## Fora do escopo atual
 
-Pets, ovos, rebirth, novas áreas, chefes esquilos, eventos, gamepasses, persistência em DataStore.
+Rebirth, novas áreas, chefes, eventos, gamepasses, poções, encantamentos, fusão de pets, DataStore.
 
 ## Segurança do projeto
 

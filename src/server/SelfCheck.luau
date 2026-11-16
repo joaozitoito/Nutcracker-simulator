@@ -1,5 +1,7 @@
 -- Asserts on Config so a bad balance edit fails loudly at boot instead of soft-locking progression.
-local Config = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").Config)
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local Config = require(Shared.Config)
+local PetConfig = require(Shared.PetConfig)
 
 return function()
 	local maxStrength = Config.strengthAtLevel(Config.MaxStrengthLevel)
@@ -20,4 +22,27 @@ return function()
 		starter = starter or def.resistance <= startStrength
 	end
 	assert(starter, "no nut is crackable at starting strength")
+
+	-- pets and eggs
+	for _, id in PetConfig.PetOrder do
+		local pet = assert(PetConfig.Pets[id], "PetOrder names a missing pet: " .. id)
+		assert(Config.Rarities[pet.rarity], id .. ": unknown rarity")
+		assert(pet.damage > 0, id .. ": damage must be positive")
+	end
+	local cheapest = math.huge
+	for _, id in PetConfig.EggOrder do
+		local egg = assert(PetConfig.Eggs[id], "EggOrder names a missing egg: " .. id)
+		assert(egg.currency == "Coins", id .. ": only Coins can pay for eggs")
+		assert(egg.price > 0, id .. ": price must be positive")
+		local total = 0
+		for _, entry in egg.pets do
+			assert(PetConfig.Pets[entry[1]], id .. " drops an unknown pet: " .. tostring(entry[1]))
+			assert(entry[2] > 0, id .. ": weights must be positive")
+			total += entry[2]
+		end
+		assert(total == 100, id .. ": weights must add up to 100 so they read as percentages")
+		assert(PetConfig.Pets[PetConfig.rollPet(id, 0)] and PetConfig.Pets[PetConfig.rollPet(id, 0.999999)], id .. ": roll")
+		cheapest = math.min(cheapest, egg.price)
+	end
+	assert(PetConfig.MaxEquipped <= PetConfig.InventoryCapacity, "cannot equip more pets than fit in the inventory")
 end

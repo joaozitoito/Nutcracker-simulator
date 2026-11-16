@@ -1,9 +1,16 @@
 -- Single place where remotes are declared. Server creates them, client waits for them.
 -- BuyStrength: client -> server, no arguments, returns { ok, reason? }
+-- OpenEgg: client -> server, (eggId: string), returns { ok, reason?, pet? = { uid, type } }
+-- EquipPet: client -> server, (uid: number, equip: boolean), returns { ok, reason? }
 -- Notify: server -> client, ("Reward", amount, position) | ("Denied", message)
 local RunService = game:GetService("RunService")
 
-local defs = { BuyStrength = "RemoteFunction", Notify = "RemoteEvent" }
+local defs = {
+	BuyStrength = "RemoteFunction",
+	OpenEgg = "RemoteFunction",
+	EquipPet = "RemoteFunction",
+	Notify = "RemoteEvent",
+}
 local Remotes = {}
 
 if RunService:IsServer() then

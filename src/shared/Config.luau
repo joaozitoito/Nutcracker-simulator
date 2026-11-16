@@ -5,11 +5,13 @@ Config.TickInterval = 0.4 -- seconds between automatic hits on the assigned nut
 Config.AssignRange = 22 -- max studs between player and nut to assign it
 Config.LeashRange = 28 -- walking further than this drops the assignment
 
--- Rarity tiers shared by nuts today and by eggs/pets later (name + colour used by the UI tags).
+-- Rarity tiers shared by nuts, pets and eggs (name + colour used by the UI tags; order = sort key, higher is rarer).
 Config.Rarities = {
 	Common = { order = 1, color = Color3.fromRGB(150, 190, 110) },
-	Rare = { order = 2, color = Color3.fromRGB(80, 160, 255) },
-	Legendary = { order = 3, color = Color3.fromRGB(255, 170, 30) },
+	Uncommon = { order = 2, color = Color3.fromRGB(60, 200, 170) },
+	Rare = { order = 3, color = Color3.fromRGB(80, 160, 255) },
+	Epic = { order = 4, color = Color3.fromRGB(180, 100, 255) },
+	Legendary = { order = 5, color = Color3.fromRGB(255, 170, 30) },
 }
 
 -- zone = which band of the field the nut spawns in (1 = closest to spawn)

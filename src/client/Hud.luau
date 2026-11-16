@@ -169,7 +169,21 @@ function Hud.start()
 	player:GetAttributeChangedSignal("TargetId"):Connect(showTarget)
 
 	---------------------------------------------------------------- shop button (+ "you can afford it" badge) and toasts
-	local shopButton = Ui.button({ text = "🔨 SHOP", color = C.orange, textSize = 26 }, { Name = "ShopButton", Size = UDim2.fromOffset(156, 68), Parent = root })
+	-- menu: every feature adds its button here, layout() decides if the row is horizontal or vertical
+	local menu = make("Frame", { Name = "Menu", BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.XY, Parent = root })
+	local menuList = make("UIListLayout", {
+		Padding = UDim.new(0, 12),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		HorizontalAlignment = Enum.HorizontalAlignment.Center,
+		VerticalAlignment = Enum.VerticalAlignment.Center,
+		Parent = menu,
+	})
+	local menuCount = 0
+	function Hud.addMenuButton(name: string, text: string, color: Color3)
+		menuCount += 1
+		return Ui.button({ text = text, color = color, textSize = 24 }, { Name = name, LayoutOrder = menuCount, Size = UDim2.fromOffset(150, 66), Parent = menu })
+	end
+	local shopButton = Hud.addMenuButton("ShopButton", "🔨 SHOP", C.orange)
 	local badge = Ui.iconTile("!", C.red, 30, { Name = "Badge", Position = UDim2.new(1, -18, 0, -12), ZIndex = 4, Visible = false, Parent = shopButton })
 	toasts = make("Frame", { Name = "Toasts", Size = UDim2.fromOffset(340, 150), BackgroundTransparency = 1, Parent = root })
 	local toastList = make("UIListLayout", { Padding = UDim.new(0, 6), HorizontalAlignment = Enum.HorizontalAlignment.Center, SortOrder = Enum.SortOrder.LayoutOrder, Parent = toasts })
@@ -300,38 +314,54 @@ function Hud.start()
 	end
 
 	---------------------------------------------------------------- actions
-	local shopOpen = false
-	local function setShop(open: boolean)
-		if open == shopOpen then
+	-- One modal panel at a time over a dimmed screen. Hud.modal(panel) opens it, Hud.modal(nil) closes whatever is open.
+	local current
+	function Hud.modal(panel: GuiObject?)
+		if panel == current then
 			return
 		end
-		shopOpen = open
 		Effects.play("ui")
-		Ui.pop(shop, open)
+		if current then
+			Ui.pop(current, false)
+		end
 		Ui.pop(oops, false)
+		current = panel
+		if panel then
+			Ui.pop(panel, true)
+		end
 		dim.Visible = true
-		local fade = Ui.tween(dim, 0.15, { BackgroundTransparency = open and 0.5 or 1 })
-		if not open then
+		local fade = Ui.tween(dim, 0.15, { BackgroundTransparency = panel and 0.5 or 1 })
+		if not panel then
 			fade.Completed:Once(function()
 				dim.Visible = dim.BackgroundTransparency < 0.9
 			end)
 		end
 	end
+	function Hud.toggle(panel: GuiObject)
+		Hud.modal(current ~= panel and panel or nil)
+	end
+	function Hud.oops(text: string)
+		oopsText.Text = text
+		Effects.play("deny")
+		Ui.pop(oops, true)
+	end
+	Hud.root = root
+
 	shopButton.Activated:Connect(function()
-		setShop(not shopOpen)
+		Hud.toggle(shop)
 	end)
 	close.Activated:Connect(function()
-		setShop(false)
+		Hud.modal(nil)
 	end)
 	dim.Activated:Connect(function()
-		setShop(false)
+		Hud.modal(nil)
 	end)
 	okay.Activated:Connect(function()
 		Ui.pop(oops, false)
 	end)
 	ProximityPromptService.PromptTriggered:Connect(function(prompt)
 		if prompt.Name == "ShopPrompt" then
-			setShop(true)
+			Hud.modal(shop)
 		end
 	end)
 
@@ -349,9 +379,7 @@ function Hud.start()
 			Hud.toast("Strength up! 💪", C.green)
 		elseif ok and result.reason == "coins" then
 			local level = player:GetAttribute("StrengthLevel") or 0
-			oopsText.Text = `You need {Format(Config.upgradeCost(level) - (player:GetAttribute("Coins") or 0))} more Coins to buy this upgrade!`
-			Effects.play("deny")
-			Ui.pop(oops, true)
+			Hud.oops(`You need {Format(Config.upgradeCost(level) - (player:GetAttribute("Coins") or 0))} more Coins to buy this upgrade!`)
 		elseif not ok then
 			Hud.toast("Purchase failed, try again", C.red)
 		end
@@ -371,7 +399,8 @@ function Hud.start()
 			uiScale.Scale = math.clamp(size.Y / 640, 0.8, 1.5)
 			stats.AnchorPoint, stats.Position = Vector2.new(0, 0.5), UDim2.new(0, 14, 0.5, 0)
 			target.Position = UDim2.new(0.5, 0, 0, 22)
-			shopButton.AnchorPoint, shopButton.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -14)
+			menu.AnchorPoint, menu.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -14)
+			menuList.FillDirection = Enum.FillDirection.Horizontal
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -92)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Bottom
 		elseif not portrait then
@@ -379,7 +408,8 @@ function Hud.start()
 			uiScale.Scale = math.clamp(math.min(size.X / 820, size.Y / 370), 0.55, 1)
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
 			target.Position = UDim2.new(0.5, 0, 0, 20)
-			shopButton.AnchorPoint, shopButton.Position = Vector2.new(1, 0.5), UDim2.new(1, -12, 0.42, 0)
+			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -12, 0.5, 0)
+			menuList.FillDirection = Enum.FillDirection.Vertical
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 132)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		else
@@ -387,7 +417,8 @@ function Hud.start()
 			uiScale.Scale = math.clamp(size.X / 440, 0.6, 1)
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
 			target.Position = UDim2.new(0.5, 0, 0, 200)
-			shopButton.AnchorPoint, shopButton.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -24)
+			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -10, 0.62, 0)
+			menuList.FillDirection = Enum.FillDirection.Vertical
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 312)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		end

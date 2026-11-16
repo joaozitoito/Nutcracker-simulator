@@ -3,6 +3,7 @@
 local Players = game:GetService("Players")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
+local PetConfig = require(Shared.PetConfig)
 local Remotes = require(Shared.Remotes)
 local PlayerData = require(script.Parent.PlayerData)
 local NutModel = require(script.Parent.NutModel)
@@ -29,10 +30,18 @@ local function setTarget(player, id: number?)
 	player:SetAttribute("TargetId", id or 0)
 end
 
--- Attack units of a player: each entry is the damage of one unit, and every unit hits the target once per tick.
--- Today the player is the only unit. Equipped pets become extra entries here; assign/check/break stay untouched.
-local function attackUnits(player): { number }
-	return { PlayerData.strength(player) }
+-- Attack units of a player. Every unit hits the player's assigned nut once per server tick.
+--   { source = "player", damage = Strength }            always first
+--   { source = pet type id, damage = PetConfig damage }   one per equipped pet
+-- Units have no timers and no targets of their own: they exist only inside the tick, so they stop the moment the
+-- assignment ends (nut broken, out of range, retarget). To rebalance pets later (multipliers, caps, buffs) change
+-- the damage computed here; nothing else in combat needs to know.
+local function attackUnits(player): { { source: string, damage: number } }
+	local units = { { source = "player", damage = PlayerData.strength(player) } }
+	for _, petType in PlayerData.equippedPets(player) do
+		table.insert(units, { source = petType, damage = PetConfig.Pets[petType].damage })
+	end
+	return units
 end
 
 -- The one validation path for every attack: nut alive, player alive, close enough, strong enough.
@@ -83,17 +92,15 @@ local function breakNut(nut)
 	end
 end
 
--- returns true if the nut broke
-local function hit(player, nut, damage: number): boolean
+local function hit(player, nut, damage: number)
 	local dealt = math.min(damage, nut.health)
 	nut.health -= dealt
 	nut.damage[player] = (nut.damage[player] or 0) + dealt
 	if nut.health <= 0 then
 		breakNut(nut)
-		return true
+	else
+		nut.model:SetAttribute("Health", nut.health)
 	end
-	nut.model:SetAttribute("Health", nut.health)
-	return false
 end
 
 -- Click on a nut only ever (re)assigns. Damage comes from the tick loop, so clicking faster gains nothing.
@@ -167,11 +174,12 @@ function NutService.start(spawnPoints)
 						setTarget(player, nil) -- walked away, died, or the nut is gone
 						return
 					end
-					for _, damage in attackUnits(player) do
-						if hit(player, nut, damage) then
-							break
-						end
+					-- all units land together as one hit: one Health update per player per tick
+					local damage = 0
+					for _, unit in attackUnits(player) do
+						damage += unit.damage
 					end
+					hit(player, nut, damage)
 				end)
 				if not ok then
 					warn("[NutService] tick failed:", err)
