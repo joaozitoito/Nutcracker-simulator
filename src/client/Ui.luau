@@ -1,6 +1,7 @@
 -- UI kit: every HUD piece is built from these so cards, buttons, bars, tags and popups look and move the same.
 -- Eggs / pets / inventory screens should be built from this module too (Ui.card, Ui.button, Ui.tag with Config.Rarities).
 local TweenService = game:GetService("TweenService")
+local Assets = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("Assets"))
 
 local Ui = {}
 
@@ -291,6 +292,69 @@ function Ui.nutIcon(look, size: number, props: { [string]: any }?)
 		end
 	end
 	return apply(icon, props)
+end
+
+---------------------------------------------------------------- image-based pieces (art from Shared.Assets)
+-- Points an ImageLabel / ImageButton at the painted area of an asset, ignoring its transparent margins.
+local function useImage(object: ImageLabel | ImageButton, image)
+	local k = Assets.textureScale(image)
+	local r = image.rect
+	object.Image = image.id
+	object.BackgroundTransparency = 1
+	object.ImageRectOffset = Vector2.new(r[1] * k, r[2] * k)
+	object.ImageRectSize = Vector2.new((r[3] - r[1]) * k, (r[4] - r[2]) * k)
+	return object.ImageRectSize
+end
+
+-- Button drawn with a 9-slice image and native text on top. Same feel as Ui.button: grows on hover, sinks on press.
+-- Returns (button, label). Change the text with label.Text; resize freely, the corners keep their shape.
+-- shortcut: corner size follows Size.Y.Offset, so size these buttons in offsets (like the rest of the HUD).
+function Ui.imageButton(style: { text: string, image: any?, textSize: number? }, props: { [string]: any }?)
+	local image = style.image or Assets.Images.ButtonGreen
+	local label = Ui.text({ Name = "Label", Text = style.text, TextSize = style.textSize or 26, Size = UDim2.fromScale(1, 0.9), ZIndex = 2 })
+	local scale = make("UIScale")
+	local button = make("ImageButton", { AutoButtonColor = false, ScaleType = Enum.ScaleType.Slice }, { label, scale })
+	local rectSize = useImage(button, image)
+	local s = image.slice
+	button.SliceCenter = Rect.new(rectSize.X * s[1], rectSize.Y * s[2], rectSize.X * s[3], rectSize.Y * s[4])
+
+	local function fitCorners()
+		local height = button.Size.Y.Offset
+		if height > 0 then
+			button.SliceScale = height / rectSize.Y -- corners drawn at the size they have when the art is `height` tall
+		end
+	end
+	button:GetPropertyChangedSignal("Size"):Connect(fitCorners)
+
+	local function press(down: boolean)
+		Ui.tween(label, 0.06, { Position = UDim2.fromOffset(0, down and 3 or 0) })
+		Ui.tween(button, 0.06, { ImageColor3 = down and Color3.fromRGB(215, 215, 215) or Ui.Color.white })
+	end
+	button.MouseEnter:Connect(function()
+		Ui.tween(scale, 0.12, { Scale = 1.06 }, Enum.EasingStyle.Back)
+	end)
+	button.MouseLeave:Connect(function()
+		Ui.tween(scale, 0.12, { Scale = 1 })
+		press(false)
+	end)
+	button.MouseButton1Down:Connect(function()
+		press(true)
+	end)
+	button.MouseButton1Up:Connect(function()
+		press(false)
+	end)
+
+	apply(button, props)
+	fitCorners()
+	return button, label
+end
+
+-- Coin icon from the art asset, `size` pixels tall, keeping the art's proportions.
+function Ui.imageCoin(size: number, props: { [string]: any }?)
+	local image = Assets.Images.CoinAcorn
+	local coin = make("ImageLabel", { Name = "Coin", ScaleType = Enum.ScaleType.Fit, Size = UDim2.fromOffset(size * Assets.aspect(image), size) })
+	useImage(coin, image)
+	return apply(coin, props)
 end
 
 -- Modal panel with a coloured title band and a close button. Returns (frame, face, close). Content starts at y = 70.

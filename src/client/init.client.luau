@@ -11,6 +11,11 @@ Hud.start()
 Pets.start()
 PetsUi.start() -- after Hud: it adds its buttons and panels to the HUD
 
+-- dev showcase of the image-based Ui pieces; separate ScreenGui, hidden until asked for, never in a published game
+if game:GetService("RunService"):IsStudio() then
+	require(script.ForgeDemo).start()
+end
+
 Remotes.Notify.OnClientEvent:Connect(function(kind, a, b)
 	if kind == "Reward" then
 		Effects.reward(a, b)

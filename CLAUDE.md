@@ -18,6 +18,7 @@ Não há linter, formatter nem test runner instalados. Validação = `rojo build
 Ferramentas de desenvolvimento (só no Studio):
 - Moedas: na barra de comando do **servidor**, `workspace:SetAttribute("DevCoins", 1000)` dá moedas a todos.
 - Prévia de resolução: atributo `PreviewSize` (Vector2) no ScreenGui `NutHud` renderiza a HUD naquele tamanho.
+- Vitrine das peças de imagem: `workspace:SetAttribute("ForgeDemo", true)` mostra o ScreenGui `ForgeDemo` (separado da HUD).
 
 ## Estrutura
 
@@ -26,6 +27,7 @@ src/shared  -> ReplicatedStorage.Shared
   Config.luau     balanceamento das nozes, raridades (Config.Rarities), alcances, tick, curvas de força/custo
   PetConfig.luau  pets (raridade, dano, aparência), ovos (preço, moeda, chances), limites, rollPet, readInventory
   PetModel.luau   modelos procedurais dos esquilos e dos ovos (usado no mundo e nos ícones 3D da interface)
+  Assets.luau     IDs e medidas (recorte, 9-slice) das imagens externas enviadas ao Roblox
   Format.luau     1234 -> "1.2k"
   Remotes.luau    declara os remotes (pasta "Net"): BuyStrength, OpenEgg, EquipPet (RemoteFunction), Notify (RemoteEvent)
 src/server  -> ServerScriptService.Server (init.server.luau sobe os módulos em ordem)
@@ -37,11 +39,13 @@ src/server  -> ServerScriptService.Server (init.server.luau sobe os módulos em 
   ShopService     handler de BuyStrength
   PetService      handlers de OpenEgg e EquipPet
 src/client  -> StarterPlayerScripts.Client
-  Ui              kit de interface: card, button, bar, tag, panel, viewport, iconTile, coin, nutIcon, pop, bump
+  Ui              kit de interface: card, button, bar, tag, panel, viewport, iconTile, coin, nutIcon, pop, bump,
+                  imageButton e imageCoin (peças com arte de Assets.luau)
   Effects         feedback no mundo: pop das nozes, números de dano, marreta, explosão de quebra, sons, onHit
   Hud             HUD: stats, cartão do alvo, menu de botões, loja, popup, toasts; API modal/toggle/oops/addMenuButton
   Pets            pets seguidores (visual): formação, movimento, investida a cada golpe confirmado
   PetsUi          botões PETS/EGGS, inventário, catálogo de ovos, sequência de abertura
+  ForgeDemo       vitrine de desenvolvimento das peças de imagem (só no Studio, fora da HUD)
 ```
 
 ## Regras da arquitetura
@@ -62,7 +66,10 @@ src/client  -> StarterPlayerScripts.Client
   A resistência da noz é comparada só com a **Força do jogador**: pets aumentam o dano, não liberam nozes mais duras.
 - Dados novos entram por configuração: noz em `Config.Nuts`, pet em `PetConfig.Pets`, ovo em `PetConfig.Eggs`
   (mais a ordem em `NutOrder` / `PetOrder` / `EggOrder`). Pet com visual novo = função nova em `OUTFITS` no `PetModel`.
-- Mapa, modelos e UI são gerados por código; não há assets externos.
+- Mapa, modelos e UI são gerados por código. As únicas exceções são imagens de arte de interface (ForgeGUI):
+  todo ID fica em `Assets.luau`, com o recorte da área pintada e o 9-slice medidos no arquivo original.
+  Texto e valores nunca ficam pintados na imagem: a arte é fundo/ícone, o texto é TextLabel.
+- ScreenGui novo precisa de `ZIndexBehavior = Sibling` (o padrão de `Instance.new` é Global e esconde o conteúdo dos cards).
 - Toda tela nova usa `Ui.luau` e entra na HUD por `Hud.addMenuButton` + `Hud.modal(painel)`.
 
 ## Combate com pets: `attackUnits(player)`
