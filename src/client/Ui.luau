@@ -321,7 +321,8 @@ function Ui.imageButton(style: { text: string, image: any?, textSize: number? },
 
 	local function press(down: boolean)
 		local base = button:GetAttribute("Tint") or Ui.Color.white
-		Ui.tween(label, 0.06, { Position = UDim2.fromOffset(0, down and 3 or 0) })
+		-- only the vertical nudge is animated: callers may have moved the label sideways to make room for an icon
+		Ui.tween(label, 0.06, { Position = UDim2.new(label.Position.X.Scale, label.Position.X.Offset, 0, down and 3 or 0) })
 		Ui.tween(button, 0.06, { ImageColor3 = down and Ui.shade(base, 0.15) or base })
 	end
 	button.MouseEnter:Connect(function()

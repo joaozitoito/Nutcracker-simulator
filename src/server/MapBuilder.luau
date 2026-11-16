@@ -497,6 +497,7 @@ local function effect(class: string)
 end
 
 local function buildLighting()
+	Lighting.GlobalShadows = true -- off by default in a Rojo-built place: without it everything is flat and washed out
 	Lighting.ClockTime = 14.5
 	Lighting.GeographicLatitude = 35
 	Lighting.Brightness = 2.8
