@@ -1,10 +1,11 @@
 -- Single place where remotes are declared. Server creates them, client waits for them.
 -- BuyStrength: client -> server, no arguments, returns { ok, reason? }
--- OpenEgg: client -> server, (eggId: string), returns { ok, reason?, pet? = { uid, type } }
+-- OpenEgg: client -> server, (eggId: string), returns { ok, reason?, pet? = { uid, type }, isNew? }
 -- EquipPet: client -> server, (uid: number, equip: boolean), returns { ok, reason? }
 -- BuyUpgrade: client -> server, (upgradeId: string), returns { ok, reason? }
 -- Rebirth: client -> server, no arguments, returns { ok, reason?, diamonds?, rebirths? }
 -- Notify: server -> client, ("Reward", amount, position) | ("Denied", message) | ("Diamonds", amount, label)
+--         | ("Collection", species, coins, diamonds)   a collection milestone was just paid
 local RunService = game:GetService("RunService")
 
 local defs = {

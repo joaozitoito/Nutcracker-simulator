@@ -42,7 +42,7 @@ end
 -- so skipping it, dying or leaving in the middle loses nothing and cannot grant anything twice.
 local opening = false
 
-local function playOpening(eggId: string, petType: string, onDone: () -> ())
+local function playOpening(eggId: string, petType: string, isNew: boolean, onDone: () -> ())
 	local egg, pet = PetConfig.Eggs[eggId], PetConfig.Pets[petType]
 	local rarity = Config.Rarities[pet.rarity]
 	local tier = rarity.order -- 1..5, drives how big the reveal is
@@ -140,6 +140,12 @@ local function playOpening(eggId: string, petType: string, onDone: () -> ())
 	title.Text = pet.displayName
 	Ui.bump(title, 1.5)
 	local tag = Ui.tag(pet.rarity:upper(), rarity.color, { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 294), Size = UDim2.fromOffset(120, 28), ZIndex = 3, Parent = stage })
+	if isNew then
+		-- first time this species was ever obtained: it was just added to the Pet Index
+		local badge = Ui.tag("NEW!", C.red, { Position = UDim2.new(0.5, 66, 0, 26), Size = UDim2.fromOffset(86, 34), Rotation = 12, ZIndex = 4, Parent = stage })
+		badge.Label.TextSize = 20
+		Ui.pop(badge, true)
+	end
 	Ui.pop(tag, true)
 	Ui.text({ Text = `⚔ +{Format(pet.damage)} damage per hit`, TextSize = 20, Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 326), ZIndex = 3, Parent = stage })
 	if tier >= 4 then
@@ -413,7 +419,7 @@ function PetsUi.start()
 		end
 		Hud.modal(nil)
 		task.spawn(function()
-			local ok, err = pcall(playOpening, eggId, result.pet.type, function()
+			local ok, err = pcall(playOpening, eggId, result.pet.type, result.isNew == true, function()
 				-- land on the new pet, ready to equip
 				selectedUid = result.pet.uid
 				refreshInventory()

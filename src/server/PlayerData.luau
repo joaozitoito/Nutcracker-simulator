@@ -3,8 +3,9 @@
 --
 -- State (also the save format, see Persistence):
 --   { version, coins, level, diamonds, rebirths, upgrades = { [id] = level }, claimed = { [rewardKey] = true },
---     nextPetUid, pets = { { uid, type } }, equipped = { uid } }
+--     discovered = { [petId] = true }, nextPetUid, pets = { { uid, type } }, equipped = { uid } }
 -- Reset on rebirth: coins, level.   Kept forever: everything else.
+-- "claimed" holds every pay-once reward: Progression.OneTimeRewards keys and Collection milestone keys.
 --
 -- No function here yields between checking and changing, so two requests can never both pass the same check.
 local HttpService = game:GetService("HttpService")
@@ -14,11 +15,12 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
 local Progression = require(Shared.Progression)
+local Collection = require(Shared.Collection)
 local Persistence = require(script.Parent.Persistence)
 
 local PlayerData = {}
 
-local VERSION = 2 -- 1 = before diamonds / upgrades / rebirth
+local VERSION = 3 -- 1 = before diamonds / upgrades / rebirth, 2 = before the pet collection
 local LEDGER_SIZE = 50
 local AUTOSAVE_SECONDS = 60
 
@@ -36,6 +38,7 @@ local function defaults()
 		rebirths = 0,
 		upgrades = {},
 		claimed = {},
+		discovered = {},
 		nextPetUid = 1,
 		pets = {},
 		equipped = {},
@@ -76,6 +79,20 @@ function PlayerData.sanitize(saved)
 				d.claimed[key] = true
 			end
 		end
+		for _, milestone in Collection.Milestones do
+			if saved.claimed[Collection.key(milestone)] == true then
+				d.claimed[Collection.key(milestone)] = true
+			end
+		end
+	end
+	-- discovered species: only ids that still exist; accepts the saved map or a plain list
+	if type(saved.discovered) == "table" then
+		for key, value in saved.discovered do
+			local id = value == true and key or value
+			if type(id) == "string" and PetConfig.Pets[id] then
+				d.discovered[id] = true
+			end
+		end
 	end
 
 	local owned, highest = {}, 0
@@ -93,6 +110,11 @@ function PlayerData.sanitize(saved)
 		end
 	end
 	d.nextPetUid = math.max(count(saved.nextPetUid, 1), highest + 1)
+	-- Owning a pet always implies having discovered it. This is also the migration for saves from before the
+	-- collection existed: their discovered list starts as the species they currently own.
+	for _, pet in d.pets do
+		d.discovered[pet.type] = true
+	end
 	if type(saved.equipped) == "table" then
 		for _, uid in saved.equipped do
 			if #d.equipped < PetConfig.MaxEquipped and owned[uid] and not table.find(d.equipped, uid) then
@@ -132,6 +154,24 @@ local function syncUpgrades(player)
 	player:SetAttribute("Upgrades", next(levels) and HttpService:JSONEncode(levels) or "{}")
 end
 
+local function syncCollection(player)
+	local d = data[player]
+	local discovered, claimed = {}, {}
+	for _, id in PetConfig.PetOrder do
+		if d.discovered[id] then
+			table.insert(discovered, id)
+		end
+	end
+	for _, milestone in Collection.Milestones do
+		if d.claimed[Collection.key(milestone)] then
+			table.insert(claimed, Collection.key(milestone))
+		end
+	end
+	player:SetAttribute("Collection", HttpService:JSONEncode({ discovered = discovered, claimed = claimed }))
+end
+
+local checkMilestones -- defined with the collection functions below
+
 local function install(player, state)
 	data[player] = state
 	ledgers[player] = {}
@@ -145,9 +185,12 @@ local function install(player, state)
 		end
 		stats.Parent = player
 	end
+	-- a loaded (or migrated) save may already be past a milestone it was never paid for: settle it now, once
+	checkMilestones(player)
 	sync(player)
 	syncInventory(player)
 	syncUpgrades(player)
+	syncCollection(player)
 end
 
 ---------------------------------------------------------------- saving
@@ -356,17 +399,57 @@ function PlayerData.spendDiamonds(player, cost: number, reason: string): boolean
 	return true
 end
 
--- Pays a Progression.OneTimeRewards entry the first time only. Returns the diamonds paid (0 if already claimed).
-function PlayerData.grantOnce(player, key: string): number
+-- The single pay-once mechanism: marks the key as claimed and pays, or does nothing if it was already claimed.
+-- The mark is set before paying and nothing here yields, so repeated or simultaneous calls can never pay twice.
+local function claim(player, key: string, coins: number, diamonds: number): boolean
 	local d = data[player]
-	local reward = Progression.OneTimeRewards[key]
-	if not d or not reward or d.claimed[key] then
-		return 0
+	if not d or d.claimed[key] then
+		return false
 	end
 	d.claimed[key] = true
-	PlayerData.addDiamonds(player, reward.diamonds, "once " .. key)
+	d.coins += coins
+	if diamonds > 0 then
+		d.diamonds += diamonds
+		recordDiamonds(player, diamonds, "once " .. key)
+	end
+	return true
+end
+
+-- Pays a Progression.OneTimeRewards entry the first time only. Returns the diamonds paid (0 if already claimed).
+function PlayerData.grantOnce(player, key: string): number
+	local reward = Progression.OneTimeRewards[key]
+	if not reward or not claim(player, key, 0, reward.diamonds) then
+		return 0
+	end
+	sync(player)
 	return reward.diamonds
 end
+
+---------------------------------------------------------------- pet collection
+function PlayerData.discoveredCount(player): number
+	local d = data[player]
+	local total = 0
+	if d then
+		for _ in d.discovered do
+			total += 1
+		end
+	end
+	return total
+end
+
+-- Pays every collection milestone the player has reached and not been paid for. Returns the milestones just paid.
+-- Safe to call any number of times: claim() remembers each one.
+function checkMilestones(player)
+	local paid = {}
+	local reached = PlayerData.discoveredCount(player)
+	for _, milestone in Collection.Milestones do
+		if reached >= milestone.species and claim(player, Collection.key(milestone), milestone.coins, milestone.diamonds) then
+			table.insert(paid, milestone)
+		end
+	end
+	return paid
+end
+PlayerData.checkMilestones = checkMilestones
 
 ---------------------------------------------------------------- permanent upgrades
 -- Buys one level of an upgrade with diamonds. Returns (ok, reason).
@@ -418,17 +501,29 @@ function PlayerData.petCount(player): number
 	return d and #d.pets or 0
 end
 
--- Adds one pet of `petType` with a fresh uid. Returns the pet record, or nil if the inventory is full.
+-- Adds one pet with a fresh uid. This is the only way a pet enters an inventory, so it is also where a species
+-- becomes discovered and where collection milestones are paid.
+-- Returns (pet, isNewSpecies, milestonesJustPaid), or nil if the type is unknown or the inventory is full.
 function PlayerData.addPet(player, petType: string)
 	local d = data[player]
-	if not d or #d.pets >= PetConfig.InventoryCapacity then
+	if not d or type(petType) ~= "string" or not PetConfig.Pets[petType] or #d.pets >= PetConfig.InventoryCapacity then
 		return nil
 	end
 	local pet = { uid = d.nextPetUid, type = petType }
 	d.nextPetUid += 1
 	table.insert(d.pets, pet)
+	local isNew = not d.discovered[petType]
+	local paid = {}
+	if isNew then
+		d.discovered[petType] = true
+		paid = checkMilestones(player)
+		if #paid > 0 then
+			sync(player)
+		end
+		syncCollection(player)
+	end
 	syncInventory(player)
-	return pet
+	return pet, isNew, paid
 end
 
 -- Equips or unequips one owned pet. Returns (ok, reason).

@@ -176,7 +176,8 @@ function Hud.start()
 
 	---------------------------------------------------------------- shop button (+ "you can afford it" badge) and toasts
 	-- menu: every feature adds its button here, layout() decides if the row is horizontal or vertical
-	local menu = make("Frame", { Name = "Menu", BackgroundTransparency = 1, Parent = root })
+	-- above the dim and the panels (ZIndex 13): with a panel open the menu still works, so one tap switches panels
+	local menu = make("Frame", { Name = "Menu", BackgroundTransparency = 1, ZIndex = 13, Parent = root })
 	local menuGrid = make("UIGridLayout", { SortOrder = Enum.SortOrder.LayoutOrder, Parent = menu })
 	local menuCount = 0
 	local layout -- defined at the end of start(); adding a button re-runs it
@@ -185,6 +186,7 @@ function Hud.start()
 		local button, label = Ui.button({ text = text, color = color, textSize = 22 }, { Name = name, LayoutOrder = menuCount, Parent = menu })
 		-- labels shrink to fit the smaller phone cells instead of clipping
 		label.TextScaled = true
+		label.TextWrapped = false -- one line: shrink the text instead of splitting "UPGRADES" in two
 		label.Size = UDim2.new(1, -14, 1, -12)
 		label.Position = UDim2.fromOffset(7, 6)
 		make("UITextSizeConstraint", { MaxTextSize = 22, MinTextSize = 10, Parent = label })
@@ -346,6 +348,7 @@ function Hud.start()
 	---------------------------------------------------------------- actions
 	-- One modal panel at a time over a dimmed screen. Hud.modal(panel) opens it, Hud.modal(nil) closes whatever is open.
 	local current
+	local modalPosition = UDim2.fromScale(0.5, 0.5) -- where panels sit; layout() moves it clear of the menu on phones
 	function Hud.modal(panel: GuiObject?)
 		if panel == current then
 			return
@@ -357,6 +360,7 @@ function Hud.start()
 		Ui.pop(oops, false)
 		current = panel
 		if panel then
+			panel.Position = modalPosition
 			Ui.pop(panel, true)
 		end
 		dim.Visible = true
@@ -441,6 +445,7 @@ function Hud.start()
 			target.Position = UDim2.new(0.5, 0, 0, 22)
 			menu.AnchorPoint, menu.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -14)
 			arrangeMenu(8, 150, 66) -- one row
+			modalPosition = UDim2.fromScale(0.5, 0.47)
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 1), UDim2.new(0.5, 0, 1, -92)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Bottom
 		elseif not portrait then
@@ -449,7 +454,8 @@ function Hud.start()
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
 			target.Position = UDim2.new(0.5, 0, 0, 20)
 			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -12, 0.5, 0)
-			arrangeMenu(2, 116, 54) -- two columns on the right edge
+			arrangeMenu(2, 128, 62) -- two columns on the right edge
+			modalPosition = UDim2.new(0.5, -145, 0.5, 0) -- panels sit left of the menu column
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 132)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		else
@@ -457,12 +463,17 @@ function Hud.start()
 			uiScale.Scale = math.clamp(size.X / 440, 0.6, 1)
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
 			target.Position = UDim2.new(0.5, 0, 0, 240)
-			menu.AnchorPoint, menu.Position = Vector2.new(1, 0.5), UDim2.new(1, -10, 0.72, 0)
-			arrangeMenu(2, 116, 54)
+			menu.AnchorPoint, menu.Position = Vector2.new(1, 0), UDim2.new(1, -10, 0, 446)
+			arrangeMenu(2, 128, 62)
+			modalPosition = UDim2.new(0.5, 0, 0, 250) -- panels sit above the menu block
 			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 352)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		end
 		hint.Position = target.Position
+		oops.Position = modalPosition
+		if current then
+			current.Position = modalPosition
+		end
 		-- a UIScale also shrinks the frame it sits in, so size the root up by the inverse to keep covering the screen
 		local s = uiScale.Scale
 		root.Size = preview and UDim2.fromOffset(preview.X / s, preview.Y / s) or UDim2.fromScale(1 / s, 1 / s)

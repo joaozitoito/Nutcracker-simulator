@@ -3,6 +3,7 @@ local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
 local Progression = require(Shared.Progression)
+local Collection = require(Shared.Collection)
 
 return function()
 	local maxStrength = Config.strengthAtLevel(Config.MaxStrengthLevel)
@@ -59,6 +60,15 @@ return function()
 			end
 			assert(math.abs(sum - 100) < 1e-9, id .. ": chances must add up to 100")
 		end
+	end
+
+	-- collection milestones: ascending, reachable, and each pays something
+	local previous = 0
+	for _, milestone in Collection.Milestones do
+		assert(milestone.species > previous and milestone.species <= Collection.total(), "collection milestone out of order or unreachable")
+		assert(milestone.coins >= 0 and milestone.diamonds >= 0 and milestone.coins + milestone.diamonds > 0, "collection milestone pays nothing")
+		assert(not Progression.OneTimeRewards[Collection.key(milestone)], "collection key clashes with a one-time reward")
+		previous = milestone.species
 	end
 
 	-- permanent upgrades and rebirth

@@ -24,12 +24,15 @@ function PetService.start()
 		end
 		-- the pet is in the inventory before the client is told anything: the animation is only a presentation
 		local luck = Progression.luck(PlayerData.upgrades(player))
-		local pet = PlayerData.addPet(player, PetConfig.rollPet(eggId, rng:NextNumber(), luck))
+		local pet, isNew, milestones = PlayerData.addPet(player, PetConfig.rollPet(eggId, rng:NextNumber(), luck))
+		for _, milestone in milestones or {} do
+			Remotes.Notify:FireClient(player, "Collection", milestone.species, milestone.coins, milestone.diamonds)
+		end
 		local diamonds = PlayerData.grantOnce(player, "FirstPet")
 		if diamonds > 0 then
 			Remotes.Notify:FireClient(player, "Diamonds", diamonds, Progression.OneTimeRewards.FirstPet.label)
 		end
-		return { ok = true, pet = pet }
+		return { ok = true, pet = pet, isNew = isNew }
 	end
 
 	Remotes.EquipPet.OnServerInvoke = function(player, uid, equip)

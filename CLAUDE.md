@@ -121,3 +121,18 @@ Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
 - Persistência: `Persistence.luau` está **desligada** (`Enabled = false`); só foi testada com o armazenamento em memória.
 - Ferramentas só do Studio (atributos do Workspace, no servidor): `DevCoins`, `DevDiamonds`, `DevTarget` (id da noz),
   `DevReload` (salva e recarrega pelo armazenamento em memória).
+
+## Coleção: Pet Index e recompensas (resumo)
+
+- Config: `src/shared/Collection.luau` (marcos `{ species, coins, diamonds }`, `Collection.read(player)`).
+  O catálogo é o próprio `PetConfig`; não há segunda lista de pets.
+- Descoberta: acontece em `PlayerData.addPet` (único ponto por onde um pet entra no inventário). Não existe remote
+  para o cliente declarar descoberta ou pedir recompensa.
+- Marcos: pagos automaticamente por `checkMilestones`, uma vez só (chave em `claimed`, mesma trava das recompensas únicas).
+  Também roda ao carregar um save, para quitar marcos de saves migrados.
+- Estado: `discovered = { [petId] = true }` (versão 3 do save). Atributo `Collection` (JSON) no Player.
+  Saves antigos ganham como descobertas as espécies que possuem.
+- Tela: `IndexUi` (botão INDEX, painel com progresso, marcos e pets por raridade; não descobertos viram silhueta).
+- Navegação: o menu fica acima dos painéis (`ZIndex 13`); tocar em outro botão troca de painel direto.
+  `layout()` define `modalPosition` para o painel não ficar sob o menu no celular.
+- Ferramenta só do Studio: `workspace:SetAttribute("DevPet", "<id do pet>")` dá o pet pelo mesmo caminho dos ovos.
