@@ -1,4 +1,4 @@
--- Nuts: spawn, assign (click), damage, break, reward, respawn. Everything here is server-side truth.
+-- Nuts: spawn, assign (click), automatic damage, break, reward, respawn. Everything here is server-side truth.
 -- Clients only see the nut Models and their Health / MaxHealth / NutId attributes, and their own TargetId attribute.
 local Players = game:GetService("Players")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
@@ -11,7 +11,6 @@ local NutService = {}
 
 local nuts = {} -- [id] = { id, def, point, position, health, model, damage = { [Player] = dealt } }
 local targets = {} -- [Player] = nut id
-local lastManual = {} -- [Player] = os.clock() of last accepted manual hit
 local nextId = 0
 local folder
 
@@ -28,6 +27,12 @@ end
 local function setTarget(player, id: number?)
 	targets[player] = id
 	player:SetAttribute("TargetId", id or 0)
+end
+
+-- Attack units of a player: each entry is the damage of one unit, and every unit hits the target once per tick.
+-- Today the player is the only unit. Equipped pets become extra entries here; assign/check/break stay untouched.
+local function attackUnits(player): { number }
+	return { PlayerData.strength(player) }
 end
 
 -- The one validation path for every attack: nut alive, player alive, close enough, strong enough.
@@ -47,22 +52,6 @@ local function check(player, id, range: number)
 		return nil, "weak"
 	end
 	return nut
-end
-
-local function nearest(player): number?
-	local position = rootPosition(player)
-	if not position then
-		return nil
-	end
-	local strength = PlayerData.strength(player)
-	local bestId, bestDistance = nil, Config.AssignRange
-	for id, nut in nuts do
-		local distance = (position - nut.position).Magnitude
-		if distance <= bestDistance and strength >= nut.def.resistance then
-			bestId, bestDistance = id, distance
-		end
-	end
-	return bestId
 end
 
 local spawnNut
@@ -86,39 +75,32 @@ local function breakNut(nut)
 	nut.model:Destroy()
 	task.delay(nut.def.respawn, spawnNut, nut.point)
 
+	-- everyone on this nut is left without a target and has to pick the next one
 	for player, id in targets do
 		if id == nut.id then
-			setTarget(player, nearest(player))
+			setTarget(player, nil)
 		end
 	end
 end
 
-local function hit(player, nut)
-	local dealt = math.min(PlayerData.strength(player), nut.health)
+-- returns true if the nut broke
+local function hit(player, nut, damage: number): boolean
+	local dealt = math.min(damage, nut.health)
 	nut.health -= dealt
 	nut.damage[player] = (nut.damage[player] or 0) + dealt
 	if nut.health <= 0 then
 		breakNut(nut)
-	else
-		nut.model:SetAttribute("Health", nut.health)
+		return true
 	end
+	nut.model:SetAttribute("Health", nut.health)
+	return false
 end
 
--- Click on a nut: assign it, or if it is already the target, land one manual hit (the "hybrid" part).
+-- Click on a nut only ever (re)assigns. Damage comes from the tick loop, so clicking faster gains nothing.
 local function onClick(player, id: number)
 	if targets[player] == id then
-		local now = os.clock()
-		if now - (lastManual[player] or 0) < Config.ManualHitCooldown then
-			return
-		end
-		local nut = check(player, id, Config.LeashRange)
-		if nut then
-			lastManual[player] = now
-			hit(player, nut)
-		end
 		return
 	end
-
 	local nut, reason = check(player, id, Config.AssignRange)
 	if nut then
 		setTarget(player, id)
@@ -172,19 +154,23 @@ function NutService.start(spawnPoints)
 
 	Players.PlayerRemoving:Connect(function(player)
 		targets[player] = nil
-		lastManual[player] = nil
 	end)
 
+	-- One global tick: a player gets at most one round of hits per tick no matter how often they click or retarget.
 	task.spawn(function()
 		while true do
 			task.wait(Config.TickInterval)
 			for player, id in targets do
 				local ok, err = pcall(function()
 					local nut = check(player, id, Config.LeashRange)
-					if nut then
-						hit(player, nut)
-					else
+					if not nut then
 						setTarget(player, nil) -- walked away, died, or the nut is gone
+						return
+					end
+					for _, damage in attackUnits(player) do
+						if hit(player, nut, damage) then
+							break
+						end
 					end
 				end)
 				if not ok then

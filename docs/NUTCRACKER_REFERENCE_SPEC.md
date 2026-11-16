@@ -51,14 +51,14 @@ Todos os 4 vídeos são gameplay de **Pet Simulator 99** [OBS: HUD, "Rank 5 – 
   conhecido do jogo de referência e a decisão já estabelecida do projeto.
 - [INT] Ritmo: quebrar leva poucos segundos na área inicial; melhorias são compradas a cada punhado de quebras.
 
-### Interpretação de "Hybrid + Assign" adotada no Round 01 [INT]
+### Ciclo de ataque em vigor (Round 01.1, decisão do dono do projeto)
 
-- **Assign**: clicar/tocar numa noz atribui o ataque do jogador a ela. O servidor aplica dano automático a cada tick
-  enquanto o jogador estiver dentro do alcance. Afastar-se cancela ("walk away to stop"). Ao quebrar, o servidor
-  atribui automaticamente a noz viva mais próxima que o jogador consiga quebrar.
-- **Hybrid**: além do dano automático, clicar/tocar de novo na noz já atribuída dá um golpe manual extra (com cooldown no
-  servidor). Ou seja: automático + ativo.
-- Como não há pets no Round 01, o "atacante" é o próprio jogador. Quando os pets entrarem, eles herdam a atribuição.
+- Clicar/tocar numa noz **atribui** o alvo; o servidor aplica dano automático a cada tick enquanto o jogador estiver
+  no alcance. Afastar-se cancela ("walk away to stop"). Clicar em outra noz válida troca o alvo.
+- Clicar de novo na noz já atribuída **não** causa dano extra (o golpe manual do Round 01 foi removido).
+- Ao quebrar, o jogador fica **sem alvo** e precisa escolher outra noz (a reatribuição automática do Round 01 foi
+  removida para não permitir farm parado).
+- Sem pets, o "atacante" é o próprio jogador. Pets entram depois como unidades extras de ataque no mesmo alvo.
 
 ## 4. Estrutura do mapa
 
@@ -113,7 +113,7 @@ Variações de noz da imagem 2 (coroa, gorro, lava, galáxia, rachada) servem co
 
 1. Áudio não analisado; os sons do protótipo são placeholders dos sons embutidos do Roblox.
 2. Timing exato de dano/respawn da referência não foi medido (frames a cada ~5 s).
-3. "Hybrid" não está definido nos materiais — a interpretação está em §3 e precisa de confirmação.
+3. "Hybrid": resolvido no Round 01.1 — ver "Ciclo de ataque em vigor" em §3.
 4. Idioma da interface: usei inglês (como o nome do jogo e a referência). Confirmar.
 5. Recompensa quando dois jogadores batem na mesma noz: dividi proporcionalmente ao dano. Confirmar.
 6. As imagens 1 e 2 parecem arte conceitual gerada; não há modelos 3D correspondentes — os modelos do protótipo são

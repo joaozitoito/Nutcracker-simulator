@@ -15,6 +15,7 @@ return function()
 	for _, name in Config.NutOrder do
 		local def = assert(Config.Nuts[name], "NutOrder names a missing nut: " .. name)
 		assert(def.health > 0 and def.reward > 0 and def.respawn > 0 and def.count > 0, name .. ": bad numbers")
+		assert(Config.Rarities[def.rarity], name .. ": unknown rarity")
 		assert(def.resistance <= maxStrength, name .. ": can never be cracked")
 		starter = starter or def.resistance <= startStrength
 	end
