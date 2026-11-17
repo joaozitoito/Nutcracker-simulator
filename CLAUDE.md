@@ -94,15 +94,28 @@ src/client  -> StarterPlayerScripts.Client
 - Sem alvo: formação atrás do dono. Com alvo: leque em volta da noz, do lado do dono.
 - Investida: `Effects.onHit` dispara quando a noz perde `Health` (golpe confirmado pelo servidor).
 
-## Persistência (ainda não implementada)
+## Persistência (DataStore)
 
-`PlayerData.snapshot(player)` devolve exatamente o que um DataStore deve salvar:
-`{ coins, level, nextPetUid, pets = { { uid, type } }, equipped = { uid } }`.
-O carregamento entra pelo segundo argumento de `add(player, saved)` em `PlayerData`. Nada depende da HUD.
+- `src/server/Persistence.luau` grava **só** num place listado em `Persistence.Environments` com `enabled = true`,
+  comparando o `game.PlaceId` exato. Em qualquer outro place (arquivo local, outro jogo) nada é lido nem gravado.
+  - `test`: PlaceId 111667852947708 (experiência privada de teste, universo 10777051784), DataStore
+    `Nutcracker_TEST_PlayerData_v1`, chave `test_player_<UserId>`. Validado com DataStore real.
+  - `production`: `enabled = false`, sem PlaceId, DataStore `PlayerData_v1`, chave `player_<UserId>`.
+    Ligar = preencher o PlaceId da experiência principal e `enabled = true`, e então validar nela.
+- Registro = snapshot do `PlayerData` (versão 4) + `saves` (contador) + `lock` (`{ id da sessão, time }`).
+  `PlayerData.sanitize` valida e migra qualquer registro (v1 a v4, corrompido ou hostil).
+- Trava de sessão: ao entrar, o servidor pega a trava; se outro servidor ainda a tem (renovada há < 300 s), espera
+  ~12 s e então assume. Um servidor que perdeu a trava não grava mais: dado antigo nunca sobrescreve o novo.
+- Quando salva: autosave a cada 60 s (renova a trava), ao sair (save final, libera a trava) e no `BindToClose`
+  (todos em paralelo, espera os saves pendentes até 25 s). Saves da mesma sessão nunca correm ao mesmo tempo.
+- Falha ao carregar: o jogador é expulso com aviso (nunca joga com progresso que não seria salvo).
+- No Studio, o console do **modo de edição** lê o DataStore mas não grava ("Access forbidden");
+  gravações de teste precisam ser feitas no servidor durante o Play.
+- `DevReload` (só Studio) continua testando salvar/carregar no armazenamento em memória, sem tocar no DataStore.
 
 ## Fora do escopo atual
 
-Rebirth, novas áreas, chefes, eventos, gamepasses, poções, encantamentos, fusão de pets, DataStore.
+Novas áreas, chefes, eventos, gamepasses, poções, encantamentos, fusão de pets, persistência em produção.
 
 ## Segurança do projeto
 
@@ -118,7 +131,7 @@ Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
   só com a Força base.
 - Attack Speed: um loop único no `NutService` (passo 0,05 s) com intervalo por jogador, piso `MinTickInterval`.
 - Egg Luck: `PetConfig.eggChances(eggId, luck)`; a soma é sempre 100 e nada fica negativo.
-- Persistência: `Persistence.luau` está **desligada** (`Enabled = false`); só foi testada com o armazenamento em memória.
+- Persistência: ver a seção "Persistência (DataStore)".
 - Ferramentas só do Studio (atributos do Workspace, no servidor): `DevCoins`, `DevDiamonds`, `DevTarget` (id da noz),
   `DevReload` (salva e recarrega pelo armazenamento em memória).
 

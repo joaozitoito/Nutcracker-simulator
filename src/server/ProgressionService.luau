@@ -47,6 +47,10 @@ function ProgressionService.start()
 			character:WaitForChild("Humanoid", 10)
 			applyWalkSpeed(player)
 		end)
+		-- saved data can arrive after the first character spawned: apply again once the upgrades are known
+		player:GetAttributeChangedSignal("Upgrades"):Connect(function()
+			applyWalkSpeed(player)
+		end)
 		applyWalkSpeed(player)
 	end
 	Players.PlayerAdded:Connect(watch)

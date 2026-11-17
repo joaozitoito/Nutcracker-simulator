@@ -28,6 +28,7 @@ local AUTOSAVE_SECONDS = 60
 local data = {} -- [Player] = state
 local ledgers = {} -- [Player] = last diamond operations, newest last (debugging only, never saved)
 local sessions = {} -- [Player] = Persistence session (nil when saving is off or the load failed)
+local loading = {} -- [Player] = true while their record is being read
 
 ---------------------------------------------------------------- loading: defaults, validation, migration
 local function defaults()
@@ -208,41 +209,57 @@ function PlayerData.snapshot(player)
 	return d and HttpService:JSONDecode(HttpService:JSONEncode(d))
 end
 
-local function save(player): boolean
+local pendingSaves = 0 -- saves in flight on this server; BindToClose waits for them
+
+-- `final` = this is the leave / shutdown save: it releases the record's lock.
+local function save(player, final: boolean?): boolean
 	local session = sessions[player]
-	if not session or not data[player] then
+	local snapshot = PlayerData.snapshot(player)
+	if not session or not snapshot then
 		return false -- saving off, or this player's load failed: never write over what is stored
 	end
-	return session:save(PlayerData.snapshot(player))
+	pendingSaves += 1
+	local ok = session:save(snapshot, final)
+	pendingSaves -= 1
+	if not ok and not session.closed then
+		warn(`[PlayerData] save failed for {player.Name}; will retry on the next autosave / leave`)
+	end
+	return ok
 end
 
 local function add(player)
-	if data[player] then
+	if data[player] or loading[player] then
 		return
 	end
 	local store = Persistence.store()
 	if not store then
-		install(player, defaults())
+		install(player, defaults()) -- saving is off in this place: play with fresh data
 		return
 	end
-	local session, saved = Persistence.open(store, player.UserId) -- yields
+	loading[player] = true
+	local session, saved = Persistence.open(store, player.UserId) -- yields; the player can't act until install()
+	loading[player] = nil
+	if not session then
+		-- Never let someone play on data that will not be saved, and never save over what could not be read.
+		warn(`[PlayerData] could not load data for {player.Name}`)
+		player:Kick("We could not load your progress. Please rejoin in a moment.")
+		return
+	end
 	if not player.Parent then
+		session:save(saved, true) -- left while loading: give the lock back untouched
 		return
 	end
-	if session then
-		sessions[player] = session
-		install(player, PlayerData.sanitize(saved))
-	else
-		-- load failed: play this session with fresh data, but keep saving OFF for this player
-		warn(`[PlayerData] could not load data for {player.Name}; progress will not be saved this session`)
-		install(player, defaults())
+	if session.tookOver then
+		warn(`[PlayerData] {player.Name}: took over a lock another server never released`)
 	end
+	sessions[player] = session
+	install(player, PlayerData.sanitize(saved))
 end
 
 function PlayerData.start()
 	Players.PlayerAdded:Connect(add)
 	Players.PlayerRemoving:Connect(function(player)
-		save(player)
+		save(player, true)
 		data[player] = nil
 		ledgers[player] = nil
 		sessions[player] = nil
@@ -260,9 +277,16 @@ function PlayerData.start()
 				end
 			end
 		end)
+		-- Shutdown: final-save everyone in parallel, then wait (Roblox allows ~30 s) for every save in flight, including
+		-- the ones PlayerRemoving started. A session already closed by its leave-save refuses a second write.
 		game:BindToClose(function()
 			for player in sessions do
-				save(player)
+				task.spawn(save, player, true)
+			end
+			local deadline = os.clock() + 25
+			task.wait()
+			while pendingSaves > 0 and os.clock() < deadline do
+				task.wait(0.1)
 			end
 		end)
 	end
@@ -295,9 +319,9 @@ function PlayerData.start()
 			for _, player in Players:GetPlayers() do
 				if data[player] then
 					local before = data[player]
-					local session = Persistence.open(memory, player.UserId)
-					local wrote = session:save(PlayerData.snapshot(player))
-					local _, loaded = Persistence.open(memory, player.UserId)
+					local session = Persistence.open(memory, player.UserId, { prefix = "memory_" })
+					local wrote = session:save(PlayerData.snapshot(player), true)
+					local _, loaded = Persistence.open(memory, player.UserId, { prefix = "memory_" })
 					install(player, PlayerData.sanitize(loaded))
 					table.insert(report, `{player.Name}: saved={wrote} identical={same(before, data[player])}`)
 				end
