@@ -211,18 +211,21 @@ end
 
 local pendingSaves = 0 -- saves in flight on this server; BindToClose waits for them
 
--- `final` = this is the leave / shutdown save: it releases the record's lock.
-local function save(player, final: boolean?): boolean
+-- `final` = this is the leave / shutdown save: it releases the record's lock. `reason` goes to the record's lastSave.
+local function save(player, final: boolean?, reason: string?): boolean
 	local session = sessions[player]
 	local snapshot = PlayerData.snapshot(player)
 	if not session or not snapshot then
 		return false -- saving off, or this player's load failed: never write over what is stored
 	end
 	pendingSaves += 1
-	local ok = session:save(snapshot, final)
+	local ok = session:save(snapshot, final, reason)
 	pendingSaves -= 1
-	if not ok and not session.closed then
-		warn(`[PlayerData] save failed for {player.Name}; will retry on the next autosave / leave`)
+	if session.lost and not final and player.Parent then
+		-- another server owns this player's record now: anything played here could never be saved
+		player:Kick("Your progress was opened on another server. Please rejoin.")
+	elseif not ok and not session.closed then
+		warn(`[PlayerData] {reason or "save"} failed for {player.Name}; the next autosave / leave will try again`)
 	end
 	return ok
 end
@@ -246,7 +249,7 @@ local function add(player)
 		return
 	end
 	if not player.Parent then
-		session:save(saved, true) -- left while loading: give the lock back untouched
+		session:save(saved, true, "left-while-loading") -- give the lock back untouched
 		return
 	end
 	if session.tookOver then
@@ -259,7 +262,7 @@ end
 function PlayerData.start()
 	Players.PlayerAdded:Connect(add)
 	Players.PlayerRemoving:Connect(function(player)
-		save(player, true)
+		save(player, true, "leave")
 		data[player] = nil
 		ledgers[player] = nil
 		sessions[player] = nil
@@ -273,7 +276,7 @@ function PlayerData.start()
 			while true do
 				task.wait(AUTOSAVE_SECONDS)
 				for player in sessions do
-					task.spawn(save, player)
+					task.spawn(save, player, false, "autosave")
 				end
 			end
 		end)
@@ -281,7 +284,7 @@ function PlayerData.start()
 		-- the ones PlayerRemoving started. A session already closed by its leave-save refuses a second write.
 		game:BindToClose(function()
 			for player in sessions do
-				task.spawn(save, player, true)
+				task.spawn(save, player, true, "shutdown")
 			end
 			local deadline = os.clock() + 25
 			task.wait()

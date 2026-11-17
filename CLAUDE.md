@@ -102,10 +102,15 @@ src/client  -> StarterPlayerScripts.Client
     `Nutcracker_TEST_PlayerData_v1`, chave `test_player_<UserId>`. Validado com DataStore real.
   - `production`: `enabled = false`, sem PlaceId, DataStore `PlayerData_v1`, chave `player_<UserId>`.
     Ligar = preencher o PlaceId da experiência principal e `enabled = true`, e então validar nela.
-- Registro = snapshot do `PlayerData` (versão 4) + `saves` (contador) + `lock` (`{ id da sessão, time }`).
+- Registro = snapshot do `PlayerData` (versão 4) + `saves` (contador) + `lock` (`{ id da sessão, time }`)
+  + `lastSave` (`{ reason, time, session }`, só diagnóstico: "autosave", "leave", "shutdown"...).
   `PlayerData.sanitize` valida e migra qualquer registro (v1 a v4, corrompido ou hostil).
-- Trava de sessão: ao entrar, o servidor pega a trava; se outro servidor ainda a tem (renovada há < 300 s), espera
-  ~12 s e então assume. Um servidor que perdeu a trava não grava mais: dado antigo nunca sobrescreve o novo.
+- Trava de sessão: ao entrar, o servidor pega a trava. Trava renovada há < 300 s (`LOCK_STALE`) é "viva": o novo
+  servidor espera 30 s (`Persistence.Timing.liveLockWait`) o dono soltar e então assume; trava mais velha é de
+  servidor morto e é assumida na hora. O dono renova a cada autosave (60 s), então nunca fica perto de 300 s.
+  Um servidor que perdeu a trava não grava mais (dado antigo nunca sobrescreve o novo) e expulsa o jogador
+  que ainda estiver nele, porque nada do que ele fizesse ali seria salvo.
+- Teste entre dois servidores independentes: procedimento em `docs/PERSISTENCE_TESTS.md`.
 - Quando salva: autosave a cada 60 s (renova a trava), ao sair (save final, libera a trava) e no `BindToClose`
   (todos em paralelo, espera os saves pendentes até 25 s). Saves da mesma sessão nunca correm ao mesmo tempo.
 - Falha ao carregar: o jogador é expulso com aviso (nunca joga com progresso que não seria salvo).

@@ -7,12 +7,19 @@
 --
 -- RECORD FORMAT (one per player, key = keyPrefix .. userId):
 --   <PlayerData snapshot fields> + saves = number of saves so far + lock = { id = session id, time = os.time() } | nil
+--   + lastSave = { reason = "autosave" | "leave" | "shutdown" | ..., time, session = first 8 chars of the id }
+--     (diagnostics only: tells which code path wrote the record last; sanitize ignores it)
 --
 -- SESSION LOCK (prevents an old server from overwriting a newer one, and a new server from loading stale data):
---   * open() takes the lock in UpdateAsync. If another live session holds it (refreshed less than LOCK_STALE seconds
---     ago) it waits and retries; after LOCK_TRIES it takes the lock over (that server is gone or stuck).
+--   * open() takes the lock in UpdateAsync. A lock refreshed less than LOCK_STALE seconds ago is "live": open() waits
+--     LIVE_LOCK_WAIT seconds in total for its owner to release it (a leaving server's final save normally does that
+--     within a few seconds), then takes it over. A lock older than LOCK_STALE is from a dead server: taken at once.
+--   * Timing: the owner renews its lock on every autosave (PlayerData, every 60 s), so a live owner's lock is never
+--     older than ~60 s, far below LOCK_STALE. A takeover of a live lock therefore only happens when a second server
+--     opens the same key while the first one has not released it for LIVE_LOCK_WAIT seconds.
 --   * save() writes only if the stored lock is still this session's. If another session took over, the save is
---     dropped and the session is closed: an old copy never overwrites what a newer session wrote.
+--     dropped and the session is marked lost: an old copy never overwrites what a newer session wrote, and the caller
+--     must stop that player from playing on (PlayerData kicks them).
 --   * save(snapshot, true) is the final save: it releases the lock so the next server can load at once.
 --   * saves of one session run one at a time (autosave and leave-save never race), and after the final save the
 --     session refuses further writes.
@@ -42,9 +49,10 @@ Persistence.Environments = {
 }
 
 local RETRIES = 3 -- per DataStore call
-local LOCK_TRIES = 5 -- attempts to get a lock held by another live session before taking it over
-local LOCK_WAIT = 3 -- seconds between those attempts
+local LOCK_TRIES = 7 -- attempts to get a lock held by another live session before taking it over
+local LOCK_WAIT = 5 -- seconds between those attempts: LIVE_LOCK_WAIT = (LOCK_TRIES - 1) * LOCK_WAIT = 30 s
 local LOCK_STALE = 300 -- a lock not refreshed for this long belongs to a dead server: take it at once
+Persistence.Timing = { liveLockWait = (LOCK_TRIES - 1) * LOCK_WAIT, lockStale = LOCK_STALE, retries = RETRIES }
 
 local dataStore -- cached store for this server, false if it failed
 
@@ -154,11 +162,12 @@ function Persistence.open(store, userId: number, options)
 		return nil
 	end
 
-	local session = { id = id, key = key, saves = record.saves or 0, tookOver = tookOver, closed = false, busy = false }
+	local session = { id = id, key = key, saves = record.saves or 0, tookOver = tookOver, closed = false, lost = false, busy = false }
 
 	-- Writes `snapshot` (a plain table). `final` = true releases the lock and closes the session.
-	-- Returns true only if it was really stored.
-	function session:save(snapshot, final: boolean?): boolean
+	-- `reason` is stored in lastSave for diagnostics. Returns true only if it was really stored.
+	-- After it returns false check session.lost: true means another session owns the record now.
+	function session:save(snapshot, final: boolean?, reason: string?): boolean
 		while self.busy do
 			task.wait(0.05)
 		end
@@ -177,6 +186,7 @@ function Persistence.open(store, userId: number, options)
 				local record = table.clone(snapshot)
 				record.saves = (tonumber(current.saves) or 0) + 1
 				record.lock = not final and { id = self.id, time = os.time() } or nil
+				record.lastSave = { reason = reason or (final and "final" or "save"), time = os.time(), session = string.sub(self.id, 1, 8) }
 				stored = true
 				return record
 			end)
@@ -187,6 +197,7 @@ function Persistence.open(store, userId: number, options)
 		if lost then
 			warn(`[Persistence] {key}: another session took over this record; this session stops saving`)
 			self.closed = true
+			self.lost = true
 		elseif final and ok and stored then
 			self.closed = true
 		end
