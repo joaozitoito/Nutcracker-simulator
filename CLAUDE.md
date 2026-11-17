@@ -124,7 +124,9 @@ Novas áreas, chefes, eventos, gamepasses, poções, encantamentos, fusão de pe
 
 ## Segurança do projeto
 
-Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
+Não publicar o jogo. Remoto: `origin` = github.com/joaozitoito/nutcracker-simulator (branch principal `main`).
+Push só quando o dono do projeto pedir, em branch de card (`card/<número>-nome`); nada direto em `main`.
+README.md é a porta de entrada do repositório: atualizar quando um sistema novo entrar.
 
 ## Progressão: diamantes, upgrades permanentes e rebirth (resumo)
 
