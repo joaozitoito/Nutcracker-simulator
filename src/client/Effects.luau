@@ -1,14 +1,12 @@
--- World feedback: nut pop-in, squash on hit, damage numbers, mallet swing, break burst, reward popups, highlight, sounds.
+-- World feedback: nut pop-in, squash on hit, damage numbers, hammer impacts, break burst, reward popups, highlight, sounds.
 -- Everything is driven by replicated state (Nuts folder + attributes), so it also shows other players' hits.
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
-local HammerModel = require(Shared.HammerModel)
 local Hammers = require(Shared.Hammers)
 local Ui = require(script.Parent.Ui)
 
@@ -25,8 +23,10 @@ local SOUNDS = {
 	deny = { "rbxasset://sounds/volume_slider.ogg", 0.6, 0.7 },
 }
 local sounds = {}
+-- "hit" pitch per hammer tier: same placeholder sound, deeper for heavier hammers
+local HIT_PITCH = { 1.8, 1.6, 1.4, 1.2, 1.0 }
 
-function Effects.play(name: string)
+function Effects.play(name: string, speed: number?)
 	local sound = sounds[name]
 	if not sound then
 		local def = SOUNDS[name]
@@ -37,6 +37,7 @@ function Effects.play(name: string)
 		sound.Parent = SoundService
 		sounds[name] = sound
 	end
+	sound.PlaybackSpeed = speed or SOUNDS[name][2]
 	SoundService:PlayLocalSound(sound)
 end
 
@@ -144,79 +145,13 @@ local function burst(model: Model)
 	Effects.play("crack")
 end
 
----------------------------------------------------------------- hammer: the local player's attack on their target
--- Purely cosmetic and local. One model, whose look follows the server's "HammerTier" attribute (Shared.Hammers):
---   no target -> carried diagonally on the character's back
---   target    -> beside the assigned nut, slamming down every time that nut loses health (a server-confirmed hit)
--- shortcut: other players' hammers are not drawn; add them (like Pets.luau does for pets) if multiplayer needs it.
-local mallet, swing, grip
-local mode = "none" -- "carry" | "nut" | "none"
-local strikeScale = 1 -- the nut's scale while swinging at it, so the impact lands where the head lands
-local CARRY_SCALE = 0.55
-local HEAD_HEIGHT = 5.2 -- head centre in HammerModel space
-
-local function hammerTier(): number
-	return player:GetAttribute("HammerTier") or 1
-end
-
-local function buildMallet()
-	local old = mallet
-	mallet = HammerModel.build(hammerTier())
-	mallet.Name = "Hammer"
-	if old then
-		old:Destroy() -- exactly one hammer at a time, whatever the tier changes
-	end
-	if not swing then
-		swing = Instance.new("NumberValue") -- radians from upright
-	end
-end
-
-local REST, STRIKE = math.rad(15), math.rad(78)
-
-local function carryCFrame(): CFrame?
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local torso = character and (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
-	if not torso or not humanoid or humanoid.Health <= 0 then
-		return nil
-	end
-	-- grip low on the left of the back, head over the right shoulder
-	return torso.CFrame * CFrame.new(-0.7, -1.1, 0.75) * CFrame.Angles(0, 0, math.rad(-38))
-end
-
-local function placeMallet(model: Model?)
-	if not mallet then
-		buildMallet()
-	end
-	if not model then
-		mode = "carry"
-		mallet:ScaleTo(CARRY_SCALE)
-		local cframe = carryCFrame()
-		if cframe then
-			mallet:PivotTo(cframe)
-		end
-		mallet.Parent = cframe and workspace or nil
-		return
-	end
-	mode = "nut"
-	local s = Config.Nuts[model.Name].look.scale
-	strikeScale = s
-	local top = model:GetPivot().Position + Vector3.new(0, 5.4 * s, 0)
-	-- face the camera sideways so the swing reads well from the player's view
-	local right = workspace.CurrentCamera.CFrame.RightVector * Vector3.new(1, 0, 1)
-	right = right.Magnitude > 0.01 and right.Unit or Vector3.xAxis
-	-- local X = right, so rotating about local Z swings the head (local +Y) down towards the nut
-	grip = CFrame.fromMatrix(top + right * 4.6 * s - Vector3.new(0, 1.1 * s, 0), right, Vector3.yAxis)
-	mallet:ScaleTo(s)
-	swing.Value = REST
-	mallet:PivotTo(grip * CFrame.Angles(0, 0, REST))
-	mallet.Parent = workspace
-end
-
--- Impact of one confirmed hit, in the style of the current hammer tier (Hammers.Tiers[n].fx).
+---------------------------------------------------------------- hammer impact
+-- The hammers themselves (one per player, carried / swinging) live in PlayerHammers.luau, which calls this when a
+-- hammer lands a server-confirmed hit. Every client runs it for every player's hits, so everyone sees every impact.
+-- Impact of one confirmed hit in the style of hammer tier `tier` (Hammers.Tiers[n].fx), `s` = nut scale.
 -- At most ~11 short-lived parts per hit, all removed by Debris within a second.
-local function impact(at: Vector3, s: number)
-	local fx = Hammers.Tiers[hammerTier()].fx
+function Effects.impact(at: Vector3, s: number, tier: number)
+	local fx = Hammers.Tiers[math.clamp(tier, 1, #Hammers.Tiers)].fx
 	local up = Vector3.yAxis
 
 	-- shock ring flat on the impact point
@@ -272,19 +207,6 @@ local function impact(at: Vector3, s: number)
 	end
 end
 
-local function strike()
-	if not mallet or not mallet.Parent or mode ~= "nut" then
-		return
-	end
-	local down = Ui.tween(swing, 0.07, { Value = STRIKE }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-	down.Completed:Once(function()
-		if grip and mode == "nut" then
-			impact((grip * CFrame.Angles(0, 0, STRIKE) * CFrame.new(0, HEAD_HEIGHT * strikeScale, 0)).Position, strikeScale)
-		end
-		Ui.tween(swing, 0.22, { Value = REST }, Enum.EasingStyle.Back)
-	end)
-end
-
 -- Other modules (pet followers) react to server-confirmed hits through this; callback(model) runs once per Health drop.
 local hitListeners = {}
 function Effects.onHit(callback: (Model) -> ())
@@ -329,8 +251,8 @@ local function track(model: Instance, animate: boolean)
 			mine and 32 or 22
 		)
 		if mine then
-			strike()
-			Effects.play("hit")
+			local tier = math.clamp(player:GetAttribute("HammerTier") or 1, 1, #Hammers.Tiers)
+			Effects.play("hit", HIT_PITCH[tier])
 		end
 	end)
 end
@@ -352,34 +274,7 @@ function Effects.start()
 		end
 	end)
 
-	buildMallet()
-	swing.Changed:Connect(function(angle)
-		if grip and mode == "nut" and mallet.Parent then
-			mallet:PivotTo(grip * CFrame.Angles(0, 0, angle))
-		end
-	end)
-	-- carried hammer follows the back every frame (anchored, no physics); hidden while dead / respawning
-	RunService.RenderStepped:Connect(function()
-		if mode ~= "carry" then
-			return
-		end
-		local cframe = carryCFrame()
-		if cframe then
-			mallet:PivotTo(cframe)
-			if not mallet.Parent then
-				mallet.Parent = workspace
-			end
-		elseif mallet.Parent then
-			mallet.Parent = nil
-		end
-	end)
-	-- new tier from the server: swap the model in place, keeping whatever it was doing
-	player:GetAttributeChangedSignal("HammerTier"):Connect(function()
-		buildMallet()
-		placeMallet(Effects.targetModel())
-	end)
-
-	-- outline + mallet on the assigned nut
+	-- outline on the assigned nut
 	local highlight = Instance.new("Highlight")
 	highlight.FillColor = Color3.new(1, 1, 1)
 	highlight.OutlineColor = Color3.new(1, 1, 1)
@@ -388,7 +283,6 @@ function Effects.start()
 	local function retarget()
 		local model = Effects.targetModel()
 		highlight.Adornee = model
-		placeMallet(model)
 		if model then
 			-- selection flash: fill starts bright and settles
 			highlight.FillTransparency = 0.2

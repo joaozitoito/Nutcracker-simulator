@@ -144,7 +144,10 @@ Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
   4 um rebirth; 5 três rebirths.
 - Servidor: `PlayerData` guarda `hammer` (maior tier já alcançado, save versão 4) e o recalcula em `sync()`;
   só sobe, então rebirth não tira a marreta. Atributo `HammerTier` no Player. Nenhum remote novo.
-- Cliente: a marreta é a mesma de antes em `Effects.luau` (um único modelo, só local): nas costas sem alvo,
-  ao lado da noz com alvo, troca de modelo quando `HammerTier` muda, impacto por tier a cada golpe confirmado.
+- Cliente: `PlayerHammers.luau` desenha a marreta de **todos** os jogadores em cada cliente (como `Pets.luau`),
+  a partir dos atributos replicados `HammerTier` e `TargetId`: nas costas sem alvo, ao lado da noz com alvo,
+  golpe + impacto do tier a cada golpe confirmado (`Effects.onHit`). Um modelo por jogador em `workspace.Hammers`,
+  criado no PlayerAdded e destruído no PlayerRemoving. O impacto em si é `Effects.impact(ponto, escala, tier)`.
+- Som do golpe: o mesmo arquivo, com tom mais grave a cada tier (só nos golpes do próprio jogador).
 - `HammerUi`: pílula "HAMMER: <nome>" sob os stats e banner de desbloqueio.
 - Puramente visual: não muda dano, intervalo, recompensas nem rebirth.
