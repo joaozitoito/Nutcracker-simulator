@@ -136,3 +136,15 @@ Não publicar o jogo nem fazer push para remotos. Apenas commits locais.
 - Navegação: o menu fica acima dos painéis (`ZIndex 13`); tocar em outro botão troca de painel direto.
   `layout()` define `modalPosition` para o painel não ficar sob o menu no celular.
 - Ferramenta só do Studio: `workspace:SetAttribute("DevPet", "<id do pet>")` dá o pet pelo mesmo caminho dos ovos.
+
+## Evolução da marreta (resumo)
+
+- Config: `src/shared/Hammers.luau` (5 tiers, requisitos, estilo de impacto); modelos em `src/shared/HammerModel.luau`.
+- Requisitos: 1 desde o início; 2 Força base >= resistência da Walnut; 3 Força base >= resistência da Golden Nut;
+  4 um rebirth; 5 três rebirths.
+- Servidor: `PlayerData` guarda `hammer` (maior tier já alcançado, save versão 4) e o recalcula em `sync()`;
+  só sobe, então rebirth não tira a marreta. Atributo `HammerTier` no Player. Nenhum remote novo.
+- Cliente: a marreta é a mesma de antes em `Effects.luau` (um único modelo, só local): nas costas sem alvo,
+  ao lado da noz com alvo, troca de modelo quando `HammerTier` muda, impacto por tier a cada golpe confirmado.
+- `HammerUi`: pílula "HAMMER: <nome>" sob os stats e banner de desbloqueio.
+- Puramente visual: não muda dano, intervalo, recompensas nem rebirth.

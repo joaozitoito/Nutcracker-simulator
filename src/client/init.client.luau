@@ -7,6 +7,7 @@ local Pets = require(script.Pets)
 local PetsUi = require(script.PetsUi)
 local ProgressionUi = require(script.ProgressionUi)
 local IndexUi = require(script.IndexUi)
+local HammerUi = require(script.HammerUi)
 
 Effects.start()
 Hud.start()
@@ -14,6 +15,7 @@ Pets.start()
 PetsUi.start() -- after Hud: it adds its buttons and panels to the HUD
 ProgressionUi.start()
 IndexUi.start()
+HammerUi.start()
 
 -- dev showcase of the image-based Ui pieces; separate ScreenGui, hidden until asked for, never in a published game
 if game:GetService("RunService"):IsStudio() then

@@ -4,6 +4,7 @@ local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
 local Progression = require(Shared.Progression)
 local Collection = require(Shared.Collection)
+local Hammers = require(Shared.Hammers)
 
 return function()
 	local maxStrength = Config.strengthAtLevel(Config.MaxStrengthLevel)
@@ -69,6 +70,17 @@ return function()
 		assert(milestone.coins >= 0 and milestone.diamonds >= 0 and milestone.coins + milestone.diamonds > 0, "collection milestone pays nothing")
 		assert(not Progression.OneTimeRewards[Collection.key(milestone)], "collection key clashes with a one-time reward")
 		previous = milestone.species
+	end
+
+	-- hammer tiers: the first is free, each later one is reachable and asks for more than the one before
+	assert(Hammers.tierFor(Config.strengthAtLevel(0), 0) == 1, "players must start with the first hammer")
+	local lastStrength, lastRebirths = 0, 0
+	for i, tier in Hammers.Tiers do
+		local strength, rebirths = tier.need.strength or 0, tier.need.rebirths or 0
+		assert(i == 1 or strength > lastStrength or rebirths > lastRebirths, "hammer tier " .. i .. " asks for nothing new")
+		assert(strength <= maxStrength, "hammer tier " .. i .. " needs more Strength than exists")
+		assert(Hammers.tierFor(math.max(strength, lastStrength), math.max(rebirths, lastRebirths)) == i, "hammer tier " .. i .. " unreachable")
+		lastStrength, lastRebirths = math.max(strength, lastStrength), math.max(rebirths, lastRebirths)
 	end
 
 	-- permanent upgrades and rebirth

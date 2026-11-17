@@ -2,11 +2,14 @@
 -- Everything is driven by replicated state (Nuts folder + attributes), so it also shows other players' hits.
 local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
 local Config = require(Shared.Config)
 local Format = require(Shared.Format)
+local HammerModel = require(Shared.HammerModel)
+local Hammers = require(Shared.Hammers)
 local Ui = require(script.Parent.Ui)
 
 local Effects = {}
@@ -141,34 +144,63 @@ local function burst(model: Model)
 	Effects.play("crack")
 end
 
----------------------------------------------------------------- mallet: the local player's attack on their target
--- Purely cosmetic. Sits beside the assigned nut and slams down every time that nut loses health.
+---------------------------------------------------------------- hammer: the local player's attack on their target
+-- Purely cosmetic and local. One model, whose look follows the server's "HammerTier" attribute (Shared.Hammers):
+--   no target -> carried diagonally on the character's back
+--   target    -> beside the assigned nut, slamming down every time that nut loses health (a server-confirmed hit)
+-- shortcut: other players' hammers are not drawn; add them (like Pets.luau does for pets) if multiplayer needs it.
 local mallet, swing, grip
+local mode = "none" -- "carry" | "nut" | "none"
+local strikeScale = 1 -- the nut's scale while swinging at it, so the impact lands where the head lands
+local CARRY_SCALE = 0.55
+local HEAD_HEIGHT = 5.2 -- head centre in HammerModel space
+
+local function hammerTier(): number
+	return player:GetAttribute("HammerTier") or 1
+end
 
 local function buildMallet()
-	mallet = Instance.new("Model")
-	local wood, dark, metal = Color3.fromRGB(190, 125, 70), Color3.fromRGB(120, 75, 45), Color3.fromRGB(175, 180, 200)
-	local handle = fxPart(Vector3.new(0.7, 5, 0.7), CFrame.new(0, 2.5, 0), dark)
-	handle.Parent = mallet
-	fxPart(Vector3.new(4, 2.4, 2.4), CFrame.new(0, 5.2, 0), wood).Parent = mallet
-	fxPart(Vector3.new(0.5, 2.7, 2.7), CFrame.new(-1.3, 5.2, 0), metal).Parent = mallet
-	fxPart(Vector3.new(0.5, 2.7, 2.7), CFrame.new(1.3, 5.2, 0), metal).Parent = mallet
-	handle.PivotOffset = CFrame.new(0, -2.5, 0) -- pivot at the grip
-	mallet.PrimaryPart = handle
-	swing = Instance.new("NumberValue") -- radians from upright
+	local old = mallet
+	mallet = HammerModel.build(hammerTier())
+	mallet.Name = "Hammer"
+	if old then
+		old:Destroy() -- exactly one hammer at a time, whatever the tier changes
+	end
+	if not swing then
+		swing = Instance.new("NumberValue") -- radians from upright
+	end
 end
 
 local REST, STRIKE = math.rad(15), math.rad(78)
+
+local function carryCFrame(): CFrame?
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local torso = character and (character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso"))
+	if not torso or not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+	-- grip low on the left of the back, head over the right shoulder
+	return torso.CFrame * CFrame.new(-0.7, -1.1, 0.75) * CFrame.Angles(0, 0, math.rad(-38))
+end
 
 local function placeMallet(model: Model?)
 	if not mallet then
 		buildMallet()
 	end
 	if not model then
-		mallet.Parent = nil
+		mode = "carry"
+		mallet:ScaleTo(CARRY_SCALE)
+		local cframe = carryCFrame()
+		if cframe then
+			mallet:PivotTo(cframe)
+		end
+		mallet.Parent = cframe and workspace or nil
 		return
 	end
+	mode = "nut"
 	local s = Config.Nuts[model.Name].look.scale
+	strikeScale = s
 	local top = model:GetPivot().Position + Vector3.new(0, 5.4 * s, 0)
 	-- face the camera sideways so the swing reads well from the player's view
 	local right = workspace.CurrentCamera.CFrame.RightVector * Vector3.new(1, 0, 1)
@@ -181,12 +213,74 @@ local function placeMallet(model: Model?)
 	mallet.Parent = workspace
 end
 
+-- Impact of one confirmed hit, in the style of the current hammer tier (Hammers.Tiers[n].fx).
+-- At most ~11 short-lived parts per hit, all removed by Debris within a second.
+local function impact(at: Vector3, s: number)
+	local fx = Hammers.Tiers[hammerTier()].fx
+	local up = Vector3.yAxis
+
+	-- shock ring flat on the impact point
+	local ring = fxPart(Vector3.new(0.2, 1, 1) * s, CFrame.new(at) * CFrame.Angles(0, 0, math.rad(90)), fx.ring, {
+		Shape = Enum.PartType.Cylinder,
+		Material = fx.neon and Enum.Material.Neon or Enum.Material.SmoothPlastic,
+		Transparency = 0.25,
+	})
+	ring.Parent = workspace
+	Ui.tween(ring, 0.3, { Size = Vector3.new(0.2, fx.ringSize, fx.ringSize) * s, Transparency = 1 })
+	Debris:AddItem(ring, 0.35)
+	if fx.light then
+		local light = Instance.new("PointLight")
+		light.Color = fx.light
+		light.Range = 12 * s
+		light.Brightness = 4
+		light.Parent = ring
+		Ui.tween(light, 0.3, { Brightness = 0 })
+	end
+	if fx.flash then
+		local flash = fxPart(Vector3.one * s, CFrame.new(at), fx.colors[1], { Shape = Enum.PartType.Ball, Material = Enum.Material.Neon, Transparency = 0.2 })
+		flash.Parent = workspace
+		Ui.tween(flash, 0.25, { Size = Vector3.one * 5 * s, Transparency = 1 })
+		Debris:AddItem(flash, 0.3)
+	end
+
+	for i = 1, fx.pieces do
+		local color = fx.colors[(i - 1) % #fx.colors + 1]
+		local size = fx.size * s * (0.7 + math.random() * 0.6)
+		local angle = (i / fx.pieces + math.random() * 0.15) * math.pi * 2
+		local out = Vector3.new(math.cos(angle), 0, math.sin(angle))
+		local shape = fx.shape == "leaf" and Vector3.new(size * 1.6, size * 0.15, size) or Vector3.one * size
+		local piece = fxPart(shape, CFrame.new(at) * CFrame.Angles(math.random() * 6, math.random() * 6, 0), color, {
+			Shape = (fx.shape == "blob" or fx.shape == "star") and Enum.PartType.Ball or Enum.PartType.Block,
+			Material = fx.neon and Enum.Material.Neon or Enum.Material.SmoothPlastic,
+		})
+		if fx.motion == "fall" then
+			piece.Anchored = false
+			piece.Parent = workspace
+			piece.AssemblyLinearVelocity = (out * math.random(8, 16) + up * math.random(14, 24)) * math.sqrt(s)
+			piece.AssemblyAngularVelocity = Vector3.new(math.random(-8, 8), math.random(-8, 8), math.random(-8, 8))
+			Debris:AddItem(piece, 0.7)
+		elseif fx.motion == "drift" then
+			piece.Parent = workspace
+			local goal = at + (out * 3 + up * 0.5) * s
+			Ui.tween(piece, 0.8, { Position = goal - up * 1.5 * s, Orientation = piece.Orientation + Vector3.new(0, 180, 90), Transparency = 1 }, Enum.EasingStyle.Sine)
+			Debris:AddItem(piece, 0.85)
+		else -- "burst"
+			piece.Parent = workspace
+			Ui.tween(piece, 0.35, { Position = at + (out * math.random(30, 50) / 10 + up * math.random(0, 20) / 10) * s, Size = Vector3.one * 0.05 })
+			Debris:AddItem(piece, 0.4)
+		end
+	end
+end
+
 local function strike()
-	if not mallet or not mallet.Parent then
+	if not mallet or not mallet.Parent or mode ~= "nut" then
 		return
 	end
 	local down = Ui.tween(swing, 0.07, { Value = STRIKE }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
 	down.Completed:Once(function()
+		if grip and mode == "nut" then
+			impact((grip * CFrame.Angles(0, 0, STRIKE) * CFrame.new(0, HEAD_HEIGHT * strikeScale, 0)).Position, strikeScale)
+		end
 		Ui.tween(swing, 0.22, { Value = REST }, Enum.EasingStyle.Back)
 	end)
 end
@@ -260,9 +354,29 @@ function Effects.start()
 
 	buildMallet()
 	swing.Changed:Connect(function(angle)
-		if grip and mallet.Parent then
+		if grip and mode == "nut" and mallet.Parent then
 			mallet:PivotTo(grip * CFrame.Angles(0, 0, angle))
 		end
+	end)
+	-- carried hammer follows the back every frame (anchored, no physics); hidden while dead / respawning
+	RunService.RenderStepped:Connect(function()
+		if mode ~= "carry" then
+			return
+		end
+		local cframe = carryCFrame()
+		if cframe then
+			mallet:PivotTo(cframe)
+			if not mallet.Parent then
+				mallet.Parent = workspace
+			end
+		elseif mallet.Parent then
+			mallet.Parent = nil
+		end
+	end)
+	-- new tier from the server: swap the model in place, keeping whatever it was doing
+	player:GetAttributeChangedSignal("HammerTier"):Connect(function()
+		buildMallet()
+		placeMallet(Effects.targetModel())
 	end)
 
 	-- outline + mallet on the assigned nut

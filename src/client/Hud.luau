@@ -70,7 +70,8 @@ function Hud.start()
 	uiScale = make("UIScale", { Parent = root })
 
 	---------------------------------------------------------------- stats: coins, strength, progress to next upgrade
-	local stats = make("Frame", { Name = "Stats", Size = UDim2.fromOffset(210, 222), BackgroundTransparency = 1, Parent = root })
+	-- 256 tall: room under the progress bar for the hammer pill (HammerUi)
+	local stats = make("Frame", { Name = "Stats", Size = UDim2.fromOffset(210, 256), BackgroundTransparency = 1, Parent = root })
 
 	local function pill(name: string, icon: GuiObject, y: number)
 		local card, face = Ui.card({ color = C.night, radius = 26, depth = 5 }, {
@@ -462,11 +463,11 @@ function Hud.start()
 			-- phone portrait: stack stats and target vertically
 			uiScale.Scale = math.clamp(size.X / 440, 0.6, 1)
 			stats.AnchorPoint, stats.Position = Vector2.zero, UDim2.fromOffset(10, 8)
-			target.Position = UDim2.new(0.5, 0, 0, 240)
+			target.Position = UDim2.new(0.5, 0, 0, 276)
 			menu.AnchorPoint, menu.Position = Vector2.new(1, 0), UDim2.new(1, -10, 0, 446)
 			arrangeMenu(2, 128, 62)
 			modalPosition = UDim2.new(0.5, 0, 0, 250) -- panels sit above the menu block
-			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 352)
+			toasts.AnchorPoint, toasts.Position = Vector2.new(0.5, 0), UDim2.new(0.5, 0, 0, 388)
 			toastList.VerticalAlignment = Enum.VerticalAlignment.Top
 		end
 		hint.Position = target.Position

@@ -3,7 +3,7 @@
 --
 -- State (also the save format, see Persistence):
 --   { version, coins, level, diamonds, rebirths, upgrades = { [id] = level }, claimed = { [rewardKey] = true },
---     discovered = { [petId] = true }, nextPetUid, pets = { { uid, type } }, equipped = { uid } }
+--     discovered = { [petId] = true }, hammer = highest hammer tier reached, nextPetUid, pets, equipped }
 -- Reset on rebirth: coins, level.   Kept forever: everything else.
 -- "claimed" holds every pay-once reward: Progression.OneTimeRewards keys and Collection milestone keys.
 --
@@ -16,11 +16,12 @@ local Config = require(Shared.Config)
 local PetConfig = require(Shared.PetConfig)
 local Progression = require(Shared.Progression)
 local Collection = require(Shared.Collection)
+local Hammers = require(Shared.Hammers)
 local Persistence = require(script.Parent.Persistence)
 
 local PlayerData = {}
 
-local VERSION = 3 -- 1 = before diamonds / upgrades / rebirth, 2 = before the pet collection
+local VERSION = 4 -- 1 = before diamonds / upgrades / rebirth, 2 = before the pet collection, 3 = before hammers
 local LEDGER_SIZE = 50
 local AUTOSAVE_SECONDS = 60
 
@@ -39,6 +40,7 @@ local function defaults()
 		upgrades = {},
 		claimed = {},
 		discovered = {},
+		hammer = 1,
 		nextPetUid = 1,
 		pets = {},
 		equipped = {},
@@ -64,6 +66,8 @@ function PlayerData.sanitize(saved)
 	d.level = count(saved.level, 0, Config.MaxStrengthLevel)
 	d.diamonds = count(saved.diamonds, 0)
 	d.rebirths = count(saved.rebirths, 0)
+	-- older saves have no hammer: sync() raises it to whatever their Strength / rebirths already earn
+	d.hammer = math.clamp(count(saved.hammer, 1), 1, #Hammers.Tiers)
 
 	if type(saved.upgrades) == "table" then
 		for id, upgrade in Progression.Upgrades do
@@ -129,11 +133,15 @@ end
 local function sync(player)
 	local d = data[player]
 	local strength = Config.strengthAtLevel(d.level)
+	-- Hammer evolution: every change of Strength or rebirths passes through here, so this is the one unlock check.
+	-- Only ever goes up: a rebirth resets Strength but never takes a hammer back.
+	d.hammer = math.max(d.hammer, Hammers.tierFor(strength, d.rebirths))
 	player:SetAttribute("Coins", d.coins)
 	player:SetAttribute("StrengthLevel", d.level)
 	player:SetAttribute("Strength", strength)
 	player:SetAttribute("Diamonds", d.diamonds)
 	player:SetAttribute("Rebirths", d.rebirths)
+	player:SetAttribute("HammerTier", d.hammer) -- after Strength / Rebirths, so listeners see consistent values
 	local stats = player:FindFirstChild("leaderstats")
 	if stats then
 		stats.Coins.Value = d.coins
