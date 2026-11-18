@@ -20,7 +20,12 @@ Interface do jogo em inglês; documentação técnica em português.
 
 ## Como rodar
 
-Pré-requisitos: [Rojo](https://rojo.space) e Roblox Studio com o plugin do Rojo.
+Pré-requisitos: [Rokit](https://github.com/rojo-rbx/rokit) e Roblox Studio.
+
+```bash
+rokit install          # instala o Rojo na versão fixada em rokit.toml (7.7.1)
+rojo plugin install    # instala o plugin do Rojo no Studio
+```
 
 ```bash
 rojo build -o build/NutcrackerSimulator.rbxlx   # gera o place completo; abrir no Studio e apertar Play

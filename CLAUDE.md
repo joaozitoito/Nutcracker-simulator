@@ -8,6 +8,7 @@ Interface do jogo em inglês; documentação técnica em português.
 ## Comandos
 
 ```bash
+rokit install                                   # instala o Rojo na versão de rokit.toml (os dois usam a mesma)
 rojo build -o build/NutcrackerSimulator.rbxlx   # gera o place completo; abrir no Studio e apertar Play
 rojo serve                                      # sync ao vivo; conectar pelo plugin do Rojo no Studio
 ```
