@@ -55,6 +55,7 @@ Arquitetura completa e regras do projeto: [`CLAUDE.md`](CLAUDE.md).
 ## Documentação
 
 - [`CLAUDE.md`](CLAUDE.md): arquitetura, regras e detalhes de cada sistema (lido pelo Claude Code e pelo Codex).
+- [`docs/ONBOARDING_CODEX.md`](docs/ONBOARDING_CODEX.md): onboarding para quem chega no projeto (o Codex executa e gera um relatório do ambiente).
 - [`docs/ROADMAP_TRELLO.md`](docs/ROADMAP_TRELLO.md): histórico, plano e todos os cards de trabalho, com prompts prontos.
 - [`docs/PERSISTENCE_TESTS.md`](docs/PERSISTENCE_TESTS.md): procedimentos de teste do DataStore.
 - [`docs/NUTCRACKER_REFERENCE_SPEC.md`](docs/NUTCRACKER_REFERENCE_SPEC.md): referências de design.
