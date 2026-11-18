@@ -61,13 +61,13 @@ Arquitetura completa e regras do projeto: [`CLAUDE.md`](CLAUDE.md).
 
 - [`CLAUDE.md`](CLAUDE.md): arquitetura, regras e detalhes de cada sistema (lido pelo Claude Code e pelo Codex).
 - [`docs/ONBOARDING_CODEX.md`](docs/ONBOARDING_CODEX.md): onboarding para quem chega no projeto (o Codex executa e gera um relatório do ambiente).
-- [`docs/ROADMAP_TRELLO.md`](docs/ROADMAP_TRELLO.md): histórico, plano e todos os cards de trabalho, com prompts prontos.
+- [Quadro Nutcracker Simulator no Trello](https://trello.com/b/T5e0VdI1): histórico, plano e todos os cards de trabalho, com prompts prontos.
 - [`docs/PERSISTENCE_TESTS.md`](docs/PERSISTENCE_TESTS.md): procedimentos de teste do DataStore.
 - [`docs/NUTCRACKER_REFERENCE_SPEC.md`](docs/NUTCRACKER_REFERENCE_SPEC.md): referências de design.
 
 ## Como trabalhar no projeto
 
-O backlog fica no quadro **Nutcracker Simulator** do Trello (mesmos cards de `docs/ROADMAP_TRELLO.md`).
+O backlog fica no quadro [**Nutcracker Simulator**](https://trello.com/b/T5e0VdI1) do Trello.
 
 1. Pegue um card e mova para **Fazendo**.
 2. Crie uma branch `card/<número>-nome` a partir de `main`. Nada direto em `main`.
